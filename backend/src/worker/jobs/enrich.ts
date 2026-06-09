@@ -1,5 +1,7 @@
 import { prisma } from '../../db/prisma';
 import { discogs, DiscogsError } from '../clients/discogs';
+import { genius } from '../clients/genius';
+import { lyricsQueue } from '../../lib/queue';
 import { applyDiscogsRelease } from '../lib/map-discogs';
 
 /** Enrich a single release from the Discogs API. Throws to let BullMQ retry. */
@@ -34,6 +36,10 @@ export async function processEnrich(releaseId: string): Promise<void> {
       where: { id: releaseId },
       data: { enrichmentStatus: 'ENRICHED', enrichmentError: null, enrichedAt: new Date() },
     });
+    // Lyrics run on their own queue so scraping never blocks enrichment.
+    if (genius.hasAuth()) {
+      await lyricsQueue.add('lyrics', { releaseId }).catch(() => undefined);
+    }
   } catch (e) {
     await prisma.release.update({
       where: { id: releaseId },

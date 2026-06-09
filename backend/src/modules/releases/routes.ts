@@ -14,7 +14,7 @@ import {
   upsertStyle,
   upsertTag,
 } from '../../lib/upserts';
-import { enrichQueue } from '../../lib/queue';
+import { enrichQueue, lyricsQueue } from '../../lib/queue';
 import { buildReleaseOrderBy, buildReleaseWhere, releaseQuerySchema } from './query';
 import { releaseDetailInclude, toDetail, toListItem } from './serialize';
 
@@ -105,6 +105,45 @@ export async function releaseRoutes(app: FastifyInstance) {
       pageSize: qp.pageSize,
       pageCount: Math.ceil(total / qp.pageSize),
     };
+  });
+
+  // ── Bulk re-enrichment (whole collection) ─────────────────────────────────
+  app.get('/reenrich-status', async () => {
+    const counts = await enrichQueue.getJobCounts('waiting', 'active', 'delayed');
+    const waiting = (counts.waiting ?? 0) + (counts.delayed ?? 0);
+    const active = counts.active ?? 0;
+    const pending = await prisma.release.count({
+      where: { enrichmentStatus: { in: ['QUEUED', 'ENRICHING'] } },
+    });
+    return { inProgress: waiting + active > 0, waiting, active, pending };
+  });
+
+  app.post('/reenrich-all', async () => {
+    const releases = await prisma.release.findMany({
+      where: { discogsReleaseId: { not: null } },
+      select: { id: true },
+    });
+    await prisma.release.updateMany({
+      where: { discogsReleaseId: { not: null } },
+      data: { enrichmentStatus: 'QUEUED', enrichmentError: null },
+    });
+    await enrichQueue.addBulk(releases.map((r) => ({ name: 'enrich', data: { releaseId: r.id } })));
+    return { queued: releases.length };
+  });
+
+  app.post('/reenrich-all/stop', async () => {
+    // Remove queued + delayed jobs; the job currently processing will finish.
+    await enrichQueue.drain(true);
+    return { stopped: true };
+  });
+
+  // ── Random pick ───────────────────────────────────────────────────────────
+  app.get('/random', async () => {
+    const count = await prisma.release.count();
+    if (count === 0) throw notFound('Collection vide');
+    const skip = Math.floor(Math.random() * count);
+    const r = await prisma.release.findFirst({ skip, select: { id: true } });
+    return { id: r?.id ?? null };
   });
 
   // ── Detail ────────────────────────────────────────────────────────────────
@@ -322,6 +361,15 @@ export async function releaseRoutes(app: FastifyInstance) {
       },
     });
     return lyrics;
+  });
+
+  // ── Fetch lyrics from Genius on demand ────────────────────────────────
+  app.post('/:id/lyrics/fetch', async (req) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    const release = await prisma.release.findUnique({ where: { id } });
+    if (!release) throw notFound('Release not found');
+    await lyricsQueue.add('lyrics', { releaseId: id });
+    return { ok: true };
   });
 
   // ── Re-run enrichment ──────────────────────────────────────────────────

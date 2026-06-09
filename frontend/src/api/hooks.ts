@@ -108,6 +108,31 @@ export function useStats() {
   });
 }
 
+export function useOrigins() {
+  return useQuery({
+    queryKey: ['origins'],
+    queryFn: async () => (await api.get<{ origins: T.Origin[] }>('/stats/origins')).data.origins,
+  });
+}
+
+export function useReenrichStatus() {
+  return useQuery({
+    queryKey: ['reenrich-status'],
+    refetchInterval: 3000,
+    queryFn: async () =>
+      (await api.get<T.ReenrichStatus>('/releases/reenrich-status')).data,
+  });
+}
+
+export function useIntegrations() {
+  return useQuery({
+    queryKey: ['integrations'],
+    refetchOnWindowFocus: false,
+    queryFn: async () =>
+      (await api.get<{ integrations: T.Integration[] }>('/stats/integrations')).data.integrations,
+  });
+}
+
 export function useArtistSearch(q: string) {
   return useQuery({
     queryKey: ['artists', q],
