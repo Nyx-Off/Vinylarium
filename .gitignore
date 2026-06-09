@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+build/
+**/dist/
+**/build/
+
+# Prisma generated client
+backend/node_modules/.prisma/
+
+# Environment
+.env
+*.env
+!.env.example
+
+# Local runtime data (Docker volumes are external; this is for bare-metal dev)
+/data/
+backend/data/
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Test / coverage
+coverage/

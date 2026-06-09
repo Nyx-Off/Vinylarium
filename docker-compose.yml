@@ -1,0 +1,114 @@
+name: vinylarium
+
+services:
+  # ── PostgreSQL: primary relational store ──────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vinylarium}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_please}
+      POSTGRES_DB: ${POSTGRES_DB:-vinylarium}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vinylarium} -d ${POSTGRES_DB:-vinylarium}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [vinylarium]
+
+  # ── Redis: cache + BullMQ job queue ───────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [vinylarium]
+
+  # ── Backend API (Fastify). Also runs DB migrations on boot. ───────────────
+  backend:
+    build:
+      context: ./backend
+    image: vinylarium-app:local
+    restart: unless-stopped
+    command: ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-30d}
+      DISCOGS_TOKEN: ${DISCOGS_TOKEN:-}
+      DISCOGS_USER_AGENT: ${DISCOGS_USER_AGENT:-Vinylarium/0.1}
+      MUSICBRAINZ_USER_AGENT: ${MUSICBRAINZ_USER_AGENT:-Vinylarium/0.1}
+      GENIUS_ACCESS_TOKEN: ${GENIUS_ACCESS_TOKEN:-}
+      STORAGE_DIR: /data
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "3000"
+    volumes:
+      - storage:/data
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks: [vinylarium]
+
+  # ── Enrichment worker (BullMQ). Same image, different entrypoint. ─────────
+  worker:
+    image: vinylarium-app:local
+    restart: unless-stopped
+    command: ["node", "dist/worker.js"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      DISCOGS_TOKEN: ${DISCOGS_TOKEN:-}
+      DISCOGS_USER_AGENT: ${DISCOGS_USER_AGENT:-Vinylarium/0.1}
+      MUSICBRAINZ_USER_AGENT: ${MUSICBRAINZ_USER_AGENT:-Vinylarium/0.1}
+      GENIUS_ACCESS_TOKEN: ${GENIUS_ACCESS_TOKEN:-}
+      STORAGE_DIR: /data
+      NODE_ENV: ${NODE_ENV:-production}
+    volumes:
+      - storage:/data
+    depends_on:
+      backend:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks: [vinylarium]
+
+  # ── Frontend (React SPA served by nginx, proxies /api -> backend) ─────────
+  frontend:
+    build:
+      context: ./frontend
+    image: vinylarium-frontend:local
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks: [vinylarium]
+
+volumes:
+  pgdata:
+  redisdata:
+  storage:
+
+networks:
+  vinylarium:
+    driver: bridge
