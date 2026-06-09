@@ -1,1 +1,146 @@
-# Vinylarium
+<div align="center">
+
+# 🎶 Vinylarium
+
+**Transformez votre collection Discogs en une véritable bibliothèque musicale, visuelle et interactive — auto-hébergée.**
+
+Une idée de **Julien Campinotti**, portée par **Samy Bensalem**.
+
+</div>
+
+---
+
+Vinylarium importe l'export Discogs de votre collection de vinyles, l'enrichit via l'API Discogs
+(pochettes, crédits, tracklist, labels, pays, genres…) et l'affiche dans une interface
+chaleureuse et moderne, pensée pour *explorer* sa collection plutôt que simplement la consulter :
+mur de pochettes, bac à vinyles, fiches détaillées, recherche croisée, rangement physique et
+profils utilisateurs.
+
+> État : **MVP fonctionnel.** Import Discogs, bibliothèque visuelle, fiches détaillées, recherche
+> avancée, ajout manuel, rangement physique et profils sont opérationnels. MusicBrainz, Genius et le
+> globe interactif sont prévus pour les versions suivantes (voir la [feuille de route](#-feuille-de-route)).
+
+## ✨ Fonctionnalités (MVP)
+
+- **Import Discogs** — déposez votre export CSV, suivez la progression en direct, dédoublonnage automatique.
+- **Enrichissement automatique** — un *worker* récupère pochettes, crédits, musiciens, tracklist, labels, pays, genres et styles via l'API Discogs (en respectant les quotas).
+- **Bibliothèque visuelle** — mur de pochettes ou bac à vinyles (carrousel), responsive du mobile au grand écran.
+- **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production), tracklist, identifiants, versions (live, réédition, remaster…), notes, lien Discogs.
+- **Recherche croisée** — filtrez par artiste, instrument (« qui joue de la basse »), genre, style, label, pays, décennie, version, tag, emplacement…
+- **Rangement physique** — décrivez meubles, étagères, bacs et positions ; retrouvez et filtrez vos disques par emplacement.
+- **Ajout manuel** — pour les disques absents de Discogs.
+- **Profils utilisateurs** — façon Plex : sélection à l'accueil, mot de passe optionnel, avatars.
+- **Sauvegarde / restauration** — scripts fournis pour la base et les médias.
+
+## 🏗️ Architecture
+
+```
+┌──────────┐   /api   ┌──────────┐        ┌────────────┐
+│ frontend │ ───────▶ │ backend  │ ─────▶ │ PostgreSQL │
+│  (nginx) │          │ (Fastify)│        └────────────┘
+└──────────┘          └────┬─────┘
+                           │ enqueue (BullMQ)
+                      ┌────▼─────┐  ┌───────┐
+                      │  worker  │─▶│ Redis │
+                      │ (Discogs)│  └───────┘
+                      └──────────┘
+```
+
+| Service    | Rôle                                                       | Stack |
+|------------|------------------------------------------------------------|-------|
+| `frontend` | Interface web (SPA)                                        | React + Vite + Tailwind, servie par nginx |
+| `backend`  | API REST, auth, import, recherche ; applique les migrations | Node 20 + Fastify + Prisma |
+| `worker`   | Tâches longues : parsing CSV, enrichissement, pochettes    | Node 20 + BullMQ |
+| `db`       | Base de données principale                                 | PostgreSQL 16 |
+| `redis`    | File d'attente + cache                                     | Redis 7 |
+
+Le backend et le worker partagent une seule image (même code, deux points d'entrée).
+
+## 🚀 Installation
+
+Pré-requis : **Docker** et **Docker Compose** (v2).
+
+```bash
+git clone https://github.com/Nyx-Off/Vinylarium.git
+cd Vinylarium
+
+# Génère un .env avec des secrets aléatoires (ou copiez .env.example à la main)
+bash scripts/setup.sh
+
+# (Recommandé) Renseignez votre jeton Discogs dans .env :
+#   DISCOGS_TOKEN=...   →  https://www.discogs.com/settings/developers
+
+docker compose up -d --build
+```
+
+Ouvrez ensuite **http://localhost:8080** (port configurable via `FRONTEND_PORT`).
+Au premier lancement, l'application vous invite à **créer le premier compte**.
+
+### Importer sa collection
+
+1. Sur Discogs : *Collection → Exporter* → téléchargez le CSV.
+2. Dans Vinylarium : page **Import**, déposez le fichier, suivez la progression.
+3. Les pochettes et crédits apparaissent au fil de l'enrichissement.
+
+> Sans `DISCOGS_TOKEN`, l'enrichissement fonctionne mais reste limité (25 req/min et certaines
+> images sont indisponibles). Avec un jeton : 60 req/min et pochettes complètes.
+
+## ⚙️ Configuration (`.env`)
+
+| Variable | Description |
+|----------|-------------|
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Identifiants PostgreSQL |
+| `DATABASE_URL` | URL de connexion (doit correspondre aux valeurs ci-dessus) |
+| `JWT_SECRET` | Secret de signature des sessions (généré par `setup.sh`) |
+| `FRONTEND_PORT` | Port public de l'interface (défaut `8080`) |
+| `DISCOGS_TOKEN` | Jeton d'accès personnel Discogs (enrichissement) |
+| `DISCOGS_USER_AGENT` | User-Agent envoyé à Discogs (requis par leur API) |
+| `MUSICBRAINZ_USER_AGENT`, `GENIUS_ACCESS_TOKEN` | Pour l'enrichissement futur |
+
+## 💾 Sauvegarde & restauration
+
+```bash
+# Sauvegarde : crée backups/db-*.sql.gz et backups/storage-*.tar.gz
+bash scripts/backup.sh
+
+# Restauration (écrase la base et les médias actuels)
+bash scripts/restore.sh backups/db-XXXX.sql.gz backups/storage-XXXX.tar.gz
+```
+
+Les données persistent dans les volumes Docker `vinylarium_pgdata`, `vinylarium_redisdata` et
+`vinylarium_storage`.
+
+## 🛠️ Développement
+
+```bash
+# Backend (API + worker) — nécessite Node 20, une base Postgres et Redis joignables
+cd backend && npm install && npx prisma migrate dev
+npm run dev          # API sur :3000
+npm run dev:worker   # worker
+
+# Frontend — proxy /api vers :3000
+cd frontend && npm install && npm run dev   # Vite sur :5173
+```
+
+## 🗺️ Feuille de route
+
+- [x] Import Discogs + enrichissement (pochettes, crédits, tracklist)
+- [x] Bibliothèque (mur / bac), fiches détaillées, recherche croisée
+- [x] Rangement physique, ajout manuel, profils
+- [ ] Enrichissement **MusicBrainz** (origine des artistes, membres de groupes, instruments)
+- [ ] Enrichissement **Genius** (anecdotes, annotations)
+- [ ] **Globe / carte du monde** interactif
+- [ ] Moteur de recherche dédié (**Meilisearch**) : recherche floue, paroles, anecdotes
+- [ ] Statistiques avancées, timeline, exploration par instruments, thèmes personnalisables
+
+## 📦 Stockage des données
+
+Toutes les entités du cahier des charges sont modélisées (voir
+[`backend/prisma/schema.prisma`](backend/prisma/schema.prisma)) : disques, artistes, crédits
+(rôles catégorisés → musiciens / chanteurs / auteurs / producteurs), labels, pays, genres, styles,
+formats, tracklists, paroles, anecdotes, pochettes, emplacements physiques, tags, jobs d'import et
+liens externes.
+
+## 📄 Licence
+
+MIT — voir [LICENSE](LICENSE).

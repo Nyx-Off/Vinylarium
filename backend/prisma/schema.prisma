@@ -1,0 +1,586 @@
+// ============================================================================
+//  Vinylarium — Prisma schema
+//  PostgreSQL data model for a self-hosted, enriched vinyl library.
+//
+//  Design notes
+//  ------------
+//  * The library is SHARED across user profiles (Plex-style): a Release is
+//    global, with `addedByUserId` for provenance. Profiles carry identity and
+//    display preferences, not separate collections.
+//  * Credits are modelled through a normalised Role table with a `category`,
+//    which is what powers the cross-filters in the spec (§5.4): musicians =
+//    INSTRUMENT roles, singers = VOCAL, authors = WRITING, producers =
+//    PRODUCTION. This makes "all vinyls where artist X plays Bass" a single
+//    join query (Credit where artistId = X and role.name = 'Bass').
+// ============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  // "native" for local dev; the musl/openssl-3 target is what node:20-alpine needs.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ReleaseSource {
+  DISCOGS
+  MANUAL
+}
+
+enum EnrichmentStatus {
+  PENDING // imported, awaiting enrichment
+  QUEUED // enqueued on the worker
+  ENRICHING
+  ENRICHED
+  FAILED
+  MANUAL // manually entered, no external enrichment expected
+  SKIPPED
+}
+
+enum ImportStatus {
+  PENDING
+  PARSING
+  ENRICHING
+  COMPLETED
+  FAILED
+}
+
+enum RoleCategory {
+  INSTRUMENT // Bass, Drums, Guitar, Piano, Saxophone, ...
+  VOCAL // Vocals, Lead Vocals, Backing Vocals, Choir
+  WRITING // Written-By, Composed By, Lyrics By, Music By, Arranged By
+  PRODUCTION // Producer, Co-producer, Executive Producer
+  TECHNICAL // Mixed By, Mastered By, Engineer, Recorded By, Design, Photography
+  PERFORMANCE // Performer, Featuring, Orchestra, Conductor
+  OTHER
+}
+
+enum ImageType {
+  PRIMARY
+  SECONDARY
+  BACK
+  LABEL
+  OTHER
+}
+
+enum ExternalSource {
+  DISCOGS
+  MUSICBRAINZ
+  GENIUS
+  WIKIPEDIA
+  OTHER
+}
+
+enum TextSource {
+  DISCOGS
+  MUSICBRAINZ
+  GENIUS
+  WIKIPEDIA
+  MANUAL
+  OTHER
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Users / profiles
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  displayName  String
+  // Null = passwordless profile (direct access from the home screen).
+  passwordHash String?
+  avatarPath   String?
+  isAdmin      Boolean  @default(false)
+  // Free-form UI preferences (default view, theme, page size, ...).
+  preferences  Json     @default("{}")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  releasesAdded Release[]    @relation("ReleaseAddedBy")
+  imports       ImportJob[]
+  anecdotes     Anecdote[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Core: Release (a vinyl in the collection)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Release {
+  id               String           @id @default(cuid())
+  source           ReleaseSource    @default(DISCOGS)
+  enrichmentStatus EnrichmentStatus @default(PENDING)
+  enrichmentError  String?
+  enrichedAt       DateTime?
+
+  // Discogs identifiers
+  discogsReleaseId Int?    @unique
+  discogsMasterId  Int?
+  discogsUri       String?
+
+  // Core descriptive fields
+  title         String
+  sortTitle     String? // lower/normalised for ordering
+  artistDisplay String // denormalised "Artist" string ("Miles Davis", "Various", ...)
+  year          Int?
+  decade        Int? // year rounded down to the decade, for faceting
+  releasedRaw       String? // "1959", "1959-08-17", "1987-07-00" (raw, keep as-is)
+  releasedFormatted String? // "Jul 1987" (human-readable, from Discogs)
+  country           String? // pressing country (raw Discogs string)
+  countryId     String?
+  catalogNumber String?
+  notes         String?  @db.Text
+  dataQuality   String?
+
+  // Collection metadata (from the Discogs CSV export)
+  rating           Int? // 0..5
+  collectionFolder String?
+  mediaCondition   String?
+  sleeveCondition  String?
+  collectionNotes  String?   @db.Text
+  dateAdded        DateTime?
+
+  // Cover art (denormalised convenience paths; full set lives in Image[])
+  coverPath     String? // local path under STORAGE_DIR to the primary front cover
+  backCoverPath String?
+  thumbUrl      String? // remote Discogs thumbnail (fallback before download)
+
+  // Version classification (derived from formats / styles / descriptions)
+  isStudio         Boolean @default(true)
+  isLive           Boolean @default(false)
+  isCompilation    Boolean @default(false)
+  isReissue        Boolean @default(false)
+  isRemaster       Boolean @default(false)
+  isSpecialEdition Boolean @default(false)
+
+  // Physical storage
+  storageLocationId String?
+  storageSlot       String? // position within a bin ("14", "B-3", ...)
+
+  addedByUserId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  countryRef      Country?         @relation(fields: [countryId], references: [id], onDelete: SetNull)
+  storageLocation StorageLocation? @relation(fields: [storageLocationId], references: [id], onDelete: SetNull)
+  addedBy         User?            @relation("ReleaseAddedBy", fields: [addedByUserId], references: [id], onDelete: SetNull)
+
+  artists      ReleaseArtist[]
+  credits      Credit[]
+  labels       ReleaseLabel[]
+  genres       ReleaseGenre[]
+  styles       ReleaseStyle[]
+  formats      ReleaseFormat[]
+  tracks       Track[]
+  images       Image[]
+  lyrics       Lyrics[]
+  anecdotes    Anecdote[]
+  tags         ReleaseTag[]
+  externalLinks ExternalLink[]
+  identifiers  Identifier[]
+
+  @@index([year])
+  @@index([decade])
+  @@index([country])
+  @@index([sortTitle])
+  @@index([artistDisplay])
+  @@index([enrichmentStatus])
+  @@index([storageLocationId])
+  @@map("releases")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Artists & credits
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Artist {
+  id              String  @id @default(cuid())
+  name            String
+  sortName        String?
+  discogsArtistId Int?    @unique
+  realName        String?
+  profile         String? @db.Text
+  imagePath       String?
+  discogsUri      String?
+  originCountryId String? // resolved via MusicBrainz (future)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  originCountry Country?        @relation(fields: [originCountryId], references: [id], onDelete: SetNull)
+  releases      ReleaseArtist[]
+  credits       Credit[]
+  anecdotes     Anecdote[]
+  externalLinks ExternalLink[]
+
+  @@index([name])
+  @@index([sortName])
+  @@map("artists")
+}
+
+/// Primary (billed) artists of a release — the `artists[]` array in Discogs.
+model ReleaseArtist {
+  releaseId String
+  artistId  String
+  position  Int     @default(0)
+  anv       String? // artist name variation as printed
+  joinRel   String? // the Discogs "join" connector ("&", "Feat.", ...)
+  role      String? // usually empty for primary artists
+
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  artist  Artist  @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@id([releaseId, artistId, position])
+  @@index([artistId])
+  @@map("release_artists")
+}
+
+/// A normalised credit role ("Bass", "Producer", "Written-By", ...), grouped by
+/// category so the app can derive musicians / singers / authors / producers.
+model Role {
+  id       String       @id @default(cuid())
+  name     String       @unique // canonical Discogs role string
+  category RoleCategory @default(OTHER)
+
+  credits Credit[]
+
+  @@index([category])
+  @@map("roles")
+}
+
+/// A contribution by an artist to a release in a given role (the `extraartists`
+/// array in Discogs, plus per-track credits when available).
+model Credit {
+  id        String  @id @default(cuid())
+  releaseId String
+  artistId  String
+  roleId    String
+  detail    String? // role qualifier, e.g. "[Electric]" or specific instrument
+  tracks    String? // which tracks ("A1 to A4"), raw Discogs string
+  rawRole   String? // original unparsed role string for reference
+  position  Int     @default(0)
+
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  artist  Artist  @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  role    Role    @relation(fields: [roleId], references: [id])
+
+  @@index([releaseId])
+  @@index([artistId])
+  @@index([roleId])
+  @@index([artistId, roleId])
+  @@map("credits")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Labels
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Label {
+  id             String  @id @default(cuid())
+  name           String  @unique
+  discogsLabelId Int?    @unique
+  profile        String? @db.Text
+  imagePath      String?
+
+  releases ReleaseLabel[]
+
+  @@index([name])
+  @@map("labels")
+}
+
+model ReleaseLabel {
+  releaseId String
+  labelId   String
+  catno     String @default("") // catalog number on this label ("" when none)
+
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  label   Label   @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([releaseId, labelId, catno])
+  @@index([labelId])
+  @@map("release_labels")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Genres / styles / formats
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Genre {
+  id       String         @id @default(cuid())
+  name     String         @unique
+  releases ReleaseGenre[]
+
+  @@map("genres")
+}
+
+model ReleaseGenre {
+  releaseId String
+  genreId   String
+
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  genre   Genre   @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([releaseId, genreId])
+  @@index([genreId])
+  @@map("release_genres")
+}
+
+model Style {
+  id       String         @id @default(cuid())
+  name     String         @unique
+  releases ReleaseStyle[]
+
+  @@map("styles")
+}
+
+model ReleaseStyle {
+  releaseId String
+  styleId   String
+
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  style   Style   @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@id([releaseId, styleId])
+  @@index([styleId])
+  @@map("release_styles")
+}
+
+/// Per-release physical format ("Vinyl", with descriptions like LP/Album/Reissue).
+model ReleaseFormat {
+  id           String   @id @default(cuid())
+  releaseId    String
+  name         String // "Vinyl", "CD", ...
+  qty          String?
+  text         String? // free text qualifier (e.g. '180g', 'Gatefold')
+  descriptions String[] // ["LP", "Album", "Reissue", "Remastered", ...]
+
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@index([releaseId])
+  @@map("release_formats")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Tracklist
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Track {
+  id         String   @id @default(cuid())
+  releaseId  String
+  position   String? // "A1", "B2", ...
+  title      String
+  duration   String? // "3:45" as printed
+  durationSec Int?
+  trackIndex Int     @default(0)
+  type       String  @default("track") // track | heading | index | subtrack
+
+  release Release  @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  lyrics  Lyrics[]
+
+  @@index([releaseId])
+  @@map("tracks")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Images (covers)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Image {
+  id        String    @id @default(cuid())
+  releaseId String
+  type      ImageType @default(SECONDARY)
+  localPath String? // path under STORAGE_DIR once downloaded
+  sourceUrl String? // original Discogs URL
+  width     Int?
+  height    Int?
+  position  Int       @default(0)
+
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@index([releaseId])
+  @@map("images")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Lyrics & anecdotes (cultural enrichment)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Lyrics {
+  id        String     @id @default(cuid())
+  releaseId String
+  trackId   String?
+  text      String     @db.Text
+  source    TextSource @default(MANUAL)
+  sourceUrl String?
+  createdAt DateTime   @default(now())
+
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  track   Track?  @relation(fields: [trackId], references: [id], onDelete: SetNull)
+
+  @@index([releaseId])
+  @@map("lyrics")
+}
+
+model Anecdote {
+  id        String     @id @default(cuid())
+  releaseId String?
+  artistId  String?
+  title     String?
+  body      String     @db.Text
+  source    TextSource @default(MANUAL)
+  sourceUrl String?
+  createdById String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  release   Release? @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  artist    Artist?  @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([releaseId])
+  @@index([artistId])
+  @@map("anecdotes")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Countries (for filters + world map)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Country {
+  id        String  @id @default(cuid())
+  name      String  @unique // Discogs-style name ("US", "UK", "France", ...)
+  code      String? // ISO 3166-1 alpha-2 when resolvable
+  latitude  Float?
+  longitude Float?
+
+  releases       Release[]
+  artistsFromHere Artist[]
+
+  @@map("countries")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Physical storage (rangement)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model StorageLocation {
+  id        String  @id @default(cuid())
+  label     String // human label, e.g. "Meuble salon / Étagère 2 / Bac B"
+  furniture String? // meuble
+  shelf     String? // étagère
+  column    String? // colonne
+  row       String? // rangée
+  bin       String? // bac / case
+  note      String?
+  sortOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  releases Release[]
+
+  @@map("storage_locations")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Custom tags
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Tag {
+  id    String       @id @default(cuid())
+  name  String       @unique
+  color String? // hex color for the UI chip
+
+  releases ReleaseTag[]
+
+  @@map("tags")
+}
+
+model ReleaseTag {
+  releaseId String
+  tagId     String
+
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([releaseId, tagId])
+  @@index([tagId])
+  @@map("release_tags")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Discogs identifiers (barcode, matrix, ...) & external links
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Identifier {
+  id          String  @id @default(cuid())
+  releaseId   String
+  type        String // "Barcode", "Matrix / Runout", "Other", ...
+  value       String
+  description String?
+
+  release Release @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+
+  @@index([releaseId])
+  @@map("identifiers")
+}
+
+model ExternalLink {
+  id        String         @id @default(cuid())
+  releaseId String?
+  artistId  String?
+  source    ExternalSource
+  url       String
+  externalId String?
+
+  release Release? @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  artist  Artist?  @relation(fields: [artistId], references: [id], onDelete: Cascade)
+
+  @@index([releaseId])
+  @@index([artistId])
+  @@map("external_links")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Import jobs (Discogs CSV) & app settings
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ImportJob {
+  id             String       @id @default(cuid())
+  userId         String?
+  filename       String
+  storedFilePath String? // path to the uploaded CSV under STORAGE_DIR
+  status         ImportStatus @default(PENDING)
+  totalRows      Int          @default(0)
+  processedRows  Int          @default(0)
+  importedCount  Int          @default(0)
+  skippedCount   Int          @default(0)
+  failedCount    Int          @default(0)
+  error          String?      @db.Text
+  createdAt      DateTime     @default(now())
+  startedAt      DateTime?
+  finishedAt     DateTime?
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("import_jobs")
+}
+
+model Setting {
+  key   String @id
+  value Json
+
+  @@map("settings")
+}
