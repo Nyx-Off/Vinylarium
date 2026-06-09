@@ -5,6 +5,7 @@ import { api, errorMessage } from '../api/client';
 import { useRelease, useStorageLocations } from '../api/hooks';
 import { Credit, ReleaseDetail } from '../api/types';
 import { Cover } from '../components/Cover';
+import { Lightbox } from '../components/Lightbox';
 import { Rating } from '../components/Rating';
 import { Spinner } from '../components/Spinner';
 
@@ -50,6 +51,7 @@ export default function ReleaseDetailPage() {
   const [form, setForm] = useState({ storageLocationId: '', storageSlot: '', tags: '', notes: '' });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
 
   useEffect(() => {
     if (r) {
@@ -105,6 +107,18 @@ export default function ReleaseDetailPage() {
     }
   }
 
+  async function fetchLyrics() {
+    setBusy(true);
+    try {
+      await api.post(`/releases/${id}/lyrics/fetch`);
+      setMsg('Recherche des paroles lancée (Genius). Recharge la page dans un instant.');
+    } catch (e) {
+      setMsg(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function remove() {
     if (!confirm('Supprimer ce disque de la collection ?')) return;
     await api.delete(`/releases/${id}`);
@@ -122,6 +136,7 @@ export default function ReleaseDetailPage() {
 
   return (
     <div>
+      {zoom && <Lightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
       <Link to="/library" className="mb-4 inline-block text-sm text-mocha hover:text-accent">
         ← Retour à la bibliothèque
       </Link>
@@ -129,15 +144,28 @@ export default function ReleaseDetailPage() {
       <div className="grid gap-6 md:grid-cols-[300px_1fr]">
         {/* Cover column */}
         <div className="space-y-4">
-          <div className="aspect-square overflow-hidden rounded-2xl shadow-sleeve ring-1 ring-ink/10">
+          <button
+            type="button"
+            onClick={() => r.coverUrl && setZoom({ src: r.coverUrl, alt: r.title })}
+            className={`block aspect-square w-full overflow-hidden rounded-2xl shadow-sleeve ring-1 ring-ink/10 ${
+              r.coverUrl ? 'cursor-zoom-in' : ''
+            }`}
+          >
             <Cover src={r.coverUrl} title={r.title} artist={r.artistDisplay} />
-          </div>
+          </button>
           {r.backCoverUrl && (
-            <div className="aspect-square overflow-hidden rounded-2xl shadow-tile ring-1 ring-ink/10">
+            <button
+              type="button"
+              onClick={() => setZoom({ src: r.backCoverUrl!, alt: 'Verso' })}
+              className="block aspect-square w-full cursor-zoom-in overflow-hidden rounded-2xl shadow-tile ring-1 ring-ink/10"
+            >
               <Cover src={r.backCoverUrl} title="Verso" />
-            </div>
+            </button>
           )}
           <Rating value={r.rating} />
+          <Link to={`/showcase/${r.id}`} className="btn-primary w-full justify-center text-center">
+            ✦ Mode vitrine
+          </Link>
           <div className="flex flex-wrap gap-2">
             {r.discogsUri && (
               <a href={r.discogsUri} target="_blank" rel="noreferrer" className="btn-outline text-xs">
@@ -149,6 +177,9 @@ export default function ReleaseDetailPage() {
                 Ré-enrichir
               </button>
             )}
+            <button onClick={fetchLyrics} disabled={busy} className="btn-ghost text-xs">
+              Récupérer les paroles
+            </button>
             <button onClick={() => setEditing((v) => !v)} className="btn-ghost text-xs">
               {editing ? 'Annuler' : 'Modifier'}
             </button>
@@ -262,6 +293,36 @@ export default function ReleaseDetailPage() {
                   </li>
                 ))}
               </ol>
+            </Section>
+          )}
+
+          {/* Lyrics */}
+          {r.lyrics.length > 0 && (
+            <Section title="Paroles">
+              <div className="space-y-2">
+                {r.lyrics.map((l) => {
+                  const track = r.tracklist.find((t) => t.id === l.trackId);
+                  return (
+                    <details key={l.id} className="rounded-lg bg-ink/5 px-4 py-2">
+                      <summary className="cursor-pointer text-sm font-semibold">
+                        {track?.title ?? 'Paroles'}
+                        {l.source === 'GENIUS' && <span className="ml-2 text-xs text-mocha">· Genius</span>}
+                      </summary>
+                      <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-mocha">{l.text}</pre>
+                      {l.sourceUrl && (
+                        <a
+                          href={l.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-block text-xs text-accent hover:underline"
+                        >
+                          Source ↗
+                        </a>
+                      )}
+                    </details>
+                  );
+                })}
+              </div>
             </Section>
           )}
 

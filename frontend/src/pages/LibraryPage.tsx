@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useReleases } from '../api/hooks';
+import { api } from '../api/client';
 import { ReleaseCard } from '../components/ReleaseCard';
-import { Cover } from '../components/Cover';
+import { CrateBrowser } from '../components/CrateBrowser';
 import { Spinner } from '../components/Spinner';
 
 const SORTS = [
@@ -19,6 +20,16 @@ export default function LibraryPage() {
   const [sort, setSort] = useState('addedDesc');
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
+  const navigate = useNavigate();
+
+  async function pickRandom() {
+    try {
+      const { data } = await api.get<{ id: string | null }>('/releases/random');
+      if (data.id) navigate(`/release/${data.id}`);
+    } catch {
+      /* empty collection */
+    }
+  }
 
   const { data, isLoading, isFetching } = useReleases({ q: q || undefined, sort, page, pageSize: 60 });
 
@@ -72,6 +83,13 @@ export default function LibraryPage() {
               Bac
             </button>
           </div>
+          <button
+            onClick={pickRandom}
+            className="rounded-full bg-ink/5 px-3 py-1.5 text-sm font-medium text-mocha hover:bg-ink/10"
+            title="Choisir un disque au hasard"
+          >
+            🎲 Au hasard
+          </button>
         </div>
       </div>
 
@@ -99,24 +117,7 @@ export default function LibraryPage() {
           ))}
         </div>
       ) : (
-        <div className="crate no-scrollbar -mx-4 flex gap-6 overflow-x-auto px-4 py-8">
-          {items.map((r) => (
-            <Link
-              key={r.id}
-              to={`/release/${r.id}`}
-              className="group w-64 shrink-0"
-            >
-              <div className="aspect-square overflow-hidden rounded-lg shadow-sleeve ring-1 ring-ink/10 transition-transform duration-200 group-hover:-translate-y-2 group-hover:rotate-1">
-                <Cover src={r.coverUrl} title={r.title} artist={r.artistDisplay} />
-              </div>
-              <p className="mt-3 line-clamp-1 text-base font-semibold">{r.title}</p>
-              <p className="line-clamp-1 text-sm text-mocha">
-                {r.artistDisplay}
-                {r.year ? ` · ${r.year}` : ''}
-              </p>
-            </Link>
-          ))}
-        </div>
+        <CrateBrowser items={items} />
       )}
 
       {data && data.pageCount > 1 && (

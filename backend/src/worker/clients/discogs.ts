@@ -1,4 +1,5 @@
 import { config } from '../../config';
+import { fetchWithTimeout } from '../../lib/http';
 
 export class DiscogsError extends Error {
   constructor(
@@ -12,12 +13,23 @@ export class DiscogsError extends Error {
   }
 }
 
+function hasAuth(): boolean {
+  return Boolean(
+    config.discogs.token || (config.discogs.consumerKey && config.discogs.consumerSecret),
+  );
+}
+
 function headers(): Record<string, string> {
   const h: Record<string, string> = {
     'User-Agent': config.discogs.userAgent,
     Accept: 'application/json',
   };
-  if (config.discogs.token) h['Authorization'] = `Discogs token=${config.discogs.token}`;
+  if (config.discogs.token) {
+    h['Authorization'] = `Discogs token=${config.discogs.token}`;
+  } else if (config.discogs.consumerKey && config.discogs.consumerSecret) {
+    h['Authorization'] =
+      `Discogs key=${config.discogs.consumerKey}, secret=${config.discogs.consumerSecret}`;
+  }
   return h;
 }
 
@@ -27,10 +39,12 @@ export function imageHeaders(): Record<string, string> {
 }
 
 export const discogs = {
-  hasToken: () => Boolean(config.discogs.token),
+  hasAuth,
 
   async getRelease(id: number): Promise<any> {
-    const res = await fetch(`https://api.discogs.com/releases/${id}`, { headers: headers() });
+    const res = await fetchWithTimeout(`https://api.discogs.com/releases/${id}`, {
+      headers: headers(),
+    });
     if (res.status === 429) {
       throw new DiscogsError('Discogs rate limit hit', 429, false, true);
     }

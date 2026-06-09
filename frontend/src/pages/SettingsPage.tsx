@@ -1,11 +1,29 @@
 import { useRef, useState } from 'react';
 import { api, errorMessage } from '../api/client';
-import { useStats } from '../api/hooks';
+import { useQueryClient } from '@tanstack/react-query';
+import { useStats, useIntegrations, useReenrichStatus } from '../api/hooks';
 import { useAuth } from '../lib/auth';
+import { Integration } from '../api/types';
 
 export default function SettingsPage() {
   const { user, refresh } = useAuth();
   const { data: stats } = useStats();
+  const { data: integrations, isLoading: integrationsLoading } = useIntegrations();
+  const { data: reenrich } = useReenrichStatus();
+  const qc = useQueryClient();
+
+  async function toggleReenrich() {
+    try {
+      if (reenrich?.inProgress) {
+        await api.post('/releases/reenrich-all/stop');
+      } else {
+        await api.post('/releases/reenrich-all');
+      }
+      qc.invalidateQueries({ queryKey: ['reenrich-status'] });
+    } catch (e) {
+      setMsg(errorMessage(e));
+    }
+  }
   const avatarRef = useRef<HTMLInputElement>(null);
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [password, setPassword] = useState('');
@@ -96,15 +114,67 @@ export default function SettingsPage() {
         </section>
       )}
 
-      <section className="card p-6 text-sm text-mocha">
-        <h2 className="mb-2 font-display text-xl font-bold text-ink">Clés API</h2>
-        <p>
-          Les clés Discogs / MusicBrainz / Genius se configurent dans le fichier <code className="rounded bg-ink/10 px-1">.env</code> du
-          serveur (variables <code className="rounded bg-ink/10 px-1">DISCOGS_TOKEN</code>, etc.), puis
-          <code className="rounded bg-ink/10 px-1"> docker compose up -d</code>. Sans jeton Discogs, l'enrichissement reste
-          possible mais limité (25 req/min, sans certaines images).
+      <section className="card space-y-3 p-6">
+        <h2 className="font-display text-xl font-bold text-ink">Enrichissement</h2>
+        <p className="text-sm text-mocha">
+          Relance l'enrichissement Discogs (pochettes, crédits, verso, paroles) sur toute la
+          collection. Utile après l'ajout d'un jeton ou pour récupérer les nouveautés.
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={toggleReenrich}
+            className={reenrich?.inProgress ? 'btn-outline' : 'btn-primary'}
+          >
+            {reenrich?.inProgress ? '■ Arrêter' : '↻ Tout ré-enrichir'}
+          </button>
+          {reenrich && (
+            <span className="text-sm text-mocha">
+              {reenrich.inProgress
+                ? `En cours · ${reenrich.waiting} en attente, ${reenrich.active} en traitement`
+                : reenrich.pending > 0
+                  ? `${reenrich.pending} disque(s) en attente`
+                  : 'À jour'}
+            </span>
+          )}
+        </div>
+      </section>
+
+      <section className="card p-6">
+        <h2 className="mb-4 font-display text-xl font-bold text-ink">État des API</h2>
+        {integrationsLoading ? (
+          <p className="text-sm text-mocha">Vérification…</p>
+        ) : (
+          <div className="space-y-2">
+            {(integrations ?? []).map((it) => (
+              <IntegrationRow key={it.name} it={it} />
+            ))}
+          </div>
+        )}
+        <p className="mt-4 text-sm text-mocha">
+          Les clés Discogs / MusicBrainz / Genius se configurent dans le fichier{' '}
+          <code className="rounded bg-ink/10 px-1">.env</code> du serveur (variables{' '}
+          <code className="rounded bg-ink/10 px-1">DISCOGS_TOKEN</code>,{' '}
+          <code className="rounded bg-ink/10 px-1">GENIUS_ACCESS_TOKEN</code>…), puis{' '}
+          <code className="rounded bg-ink/10 px-1">docker compose up -d</code>.
         </p>
       </section>
+    </div>
+  );
+}
+
+function IntegrationRow({ it }: { it: Integration }) {
+  const color = it.ok ? 'bg-emerald-500' : it.configured ? 'bg-red-500' : 'bg-ink/30';
+  const state = it.ok ? 'Fonctionnel' : it.configured ? 'En erreur' : 'Non configuré';
+  return (
+    <div className="flex items-center justify-between rounded-xl bg-ink/5 px-4 py-3">
+      <div className="flex items-center gap-3">
+        <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${color}`} />
+        <div>
+          <p className="font-semibold">{it.name}</p>
+          <p className="text-xs text-mocha">{it.detail}</p>
+        </div>
+      </div>
+      <span className="text-xs font-medium text-mocha">{state}</span>
     </div>
   );
 }

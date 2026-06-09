@@ -25,6 +25,9 @@ backend/data/
 npm-debug.log*
 logs/
 
+# Claude Code
+CLAUDE.md
+
 # Editor / OS
 .DS_Store
 .idea/

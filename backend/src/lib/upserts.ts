@@ -1,5 +1,6 @@
 import { prisma } from '../db/prisma';
 import { categorizeRole } from './discogs-roles';
+import { geoForCountry } from './countries';
 import { sortName } from './text';
 
 /** Find-or-create helpers shared by manual add (API) and enrichment (worker). */
@@ -29,7 +30,13 @@ export async function upsertTag(name: string, color?: string | null) {
 }
 
 export async function upsertCountry(name: string) {
-  return prisma.country.upsert({ where: { name }, update: {}, create: { name } });
+  const geo = geoForCountry(name);
+  const geoData = geo ? { code: geo.code, latitude: geo.lat, longitude: geo.lng } : {};
+  return prisma.country.upsert({
+    where: { name },
+    update: geoData,
+    create: { name, ...geoData },
+  });
 }
 
 export async function upsertLabelByName(name: string, discogsLabelId?: number | null) {

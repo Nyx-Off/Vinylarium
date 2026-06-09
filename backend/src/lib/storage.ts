@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { config } from '../config';
+import { fetchWithTimeout } from './http';
 
 export const SUBDIRS = {
   covers: 'covers',
@@ -46,7 +47,7 @@ export async function downloadToStorage(
   headers: Record<string, string> = {},
 ): Promise<string | null> {
   try {
-    const res = await fetch(url, { headers });
+    const res = await fetchWithTimeout(url, { headers }, 30_000);
     if (!res.ok) return null;
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length === 0) return null;

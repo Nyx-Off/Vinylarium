@@ -204,17 +204,43 @@ export async function applyDiscogsRelease(releaseId: string, data: any): Promise
     });
   }
 
-  await downloadCover(releaseId, data);
+  await downloadCovers(releaseId, data);
 }
 
-async function downloadCover(releaseId: string, data: any): Promise<void> {
+function imageExt(url: string): string {
+  return (url.match(/\.(jpe?g|png|gif|webp)(\?|$)/i)?.[1] || 'jpg').toLowerCase();
+}
+
+/**
+ * Download the front cover and (when available) a back cover. Discogs serves
+ * images from a CDN that rejects browser hotlinks, so the bytes must be
+ * fetched server-side and stored locally for the UI to display them.
+ */
+async function downloadCovers(releaseId: string, data: any): Promise<void> {
   const images: any[] = Array.isArray(data.images) ? data.images : [];
+
+  // Front: the "primary" image, falling back to the first image / thumbnail.
   const primary = images.find((i) => i.type === 'primary') ?? images[0];
-  const url: string | undefined = primary?.uri || data.thumb;
-  if (!url) return;
-  const ext = (url.match(/\.(jpe?g|png|gif|webp)(\?|$)/i)?.[1] || 'jpg').toLowerCase();
-  const rel = await downloadToStorage(url, 'covers', `${releaseId}.${ext}`, imageHeaders());
-  if (rel) {
-    await prisma.release.update({ where: { id: releaseId }, data: { coverPath: rel } });
+  const frontUrl: string | undefined = primary?.uri || data.thumb;
+  if (frontUrl) {
+    const rel = await downloadToStorage(
+      frontUrl,
+      'covers',
+      `${releaseId}.${imageExt(frontUrl)}`,
+      imageHeaders(),
+    );
+    if (rel) await prisma.release.update({ where: { id: releaseId }, data: { coverPath: rel } });
+  }
+
+  // Back: the first image that isn't the chosen front (usually the verso).
+  const back = images.find((i) => i !== primary && i?.uri);
+  if (back?.uri) {
+    const rel = await downloadToStorage(
+      back.uri,
+      'covers',
+      `${releaseId}-back.${imageExt(back.uri)}`,
+      imageHeaders(),
+    );
+    if (rel) await prisma.release.update({ where: { id: releaseId }, data: { backCoverPath: rel } });
   }
 }

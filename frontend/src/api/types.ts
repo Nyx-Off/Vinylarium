@@ -167,6 +167,28 @@ export interface Stats {
   topCountries: { name: string; count: number }[];
 }
 
+export interface Origin {
+  name: string;
+  code: string;
+  lat: number;
+  lng: number;
+  count: number;
+}
+
+export interface ReenrichStatus {
+  inProgress: boolean;
+  waiting: number;
+  active: number;
+  pending: number;
+}
+
+export interface Integration {
+  name: string;
+  configured: boolean;
+  ok: boolean;
+  detail: string;
+}
+
 export interface ArtistSearchResult {
   id: string;
   name: string;

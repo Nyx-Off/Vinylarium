@@ -11,6 +11,7 @@ import ImportPage from './pages/ImportPage';
 import ManualAddPage from './pages/ManualAddPage';
 import SettingsPage from './pages/SettingsPage';
 import MapPage from './pages/MapPage';
+import ShowcasePage from './pages/ShowcasePage';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -33,6 +34,8 @@ export default function App() {
 
   return (
     <Routes>
+      {/* Fullscreen, outside the app chrome. */}
+      <Route path="/showcase/:id" element={<ShowcasePage />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Navigate to="/library" replace />} />
         <Route path="/library" element={<LibraryPage />} />

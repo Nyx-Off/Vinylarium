@@ -34,7 +34,11 @@ export const config = {
   storageDir: optional('STORAGE_DIR', '/data'),
 
   discogs: {
+    // Either a personal access token, or an app Consumer key+secret (key/secret
+    // grants the authenticated rate limit + the images[] array without a user).
     token: optional('DISCOGS_TOKEN'),
+    consumerKey: optional('DISCOGS_CONSUMER_KEY'),
+    consumerSecret: optional('DISCOGS_CONSUMER_SECRET'),
     userAgent: optional('DISCOGS_USER_AGENT', 'Vinylarium/0.1 +https://github.com/Nyx-Off/Vinylarium'),
   },
 

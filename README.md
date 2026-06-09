@@ -16,20 +16,24 @@ chaleureuse et moderne, pensée pour *explorer* sa collection plutôt que simple
 mur de pochettes, bac à vinyles, fiches détaillées, recherche croisée, rangement physique et
 profils utilisateurs.
 
-> État : **MVP fonctionnel.** Import Discogs, bibliothèque visuelle, fiches détaillées, recherche
-> avancée, ajout manuel, rangement physique et profils sont opérationnels. MusicBrainz, Genius et le
-> globe interactif sont prévus pour les versions suivantes (voir la [feuille de route](#-feuille-de-route)).
+> État : **fonctionnel.** Import Discogs, bibliothèque visuelle, fiches détaillées (recto **et verso**),
+> recherche avancée, paroles via Genius, globe interactif, mode vitrine, ajout manuel, rangement
+> physique et profils sont opérationnels. L'enrichissement MusicBrainz reste à venir
+> (voir la [feuille de route](#-feuille-de-route)).
 
-## ✨ Fonctionnalités (MVP)
+## ✨ Fonctionnalités
 
 - **Import Discogs** — déposez votre export CSV, suivez la progression en direct, dédoublonnage automatique.
-- **Enrichissement automatique** — un *worker* récupère pochettes, crédits, musiciens, tracklist, labels, pays, genres et styles via l'API Discogs (en respectant les quotas).
-- **Bibliothèque visuelle** — mur de pochettes ou bac à vinyles (carrousel), responsive du mobile au grand écran.
-- **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production), tracklist, identifiants, versions (live, réédition, remaster…), notes, lien Discogs.
+- **Enrichissement automatique** — un *worker* récupère pochettes (recto **et verso**), crédits, musiciens, tracklist, labels, pays, genres et styles via l'API Discogs (en respectant les quotas).
+- **Paroles (Genius)** — récupération automatique des paroles piste par piste lors de l'enrichissement (file dédiée, *best-effort*), ou à la demande.
+- **Bibliothèque visuelle** — mur de pochettes ou **bac à vinyles** (feuilletage vertical façon disquaire), bouton **« au hasard »**, responsive du mobile à la tablette.
+- **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production), tracklist, paroles, identifiants, versions (live, réédition, remaster…), notes, lien Discogs ; clic sur une pochette pour l'agrandir.
+- **Mode vitrine** — affichage plein écran d'un disque, pochette en **objet 3D** qui tourne pour montrer recto/verso (pensé tablette).
+- **Globe interactif** — carte du monde manipulable (rotation, glisser) des origines de pressage ; clic sur un pays pour filtrer.
 - **Recherche croisée** — filtrez par artiste, instrument (« qui joue de la basse »), genre, style, label, pays, décennie, version, tag, emplacement…
 - **Rangement physique** — décrivez meubles, étagères, bacs et positions ; retrouvez et filtrez vos disques par emplacement.
 - **Ajout manuel** — pour les disques absents de Discogs.
-- **Profils utilisateurs** — façon Plex : sélection à l'accueil, mot de passe optionnel, avatars.
+- **Profils utilisateurs** — façon Plex : sélection à l'accueil, mot de passe optionnel, avatars ; **état des API** et **ré-enrichissement global** (start/stop) dans les paramètres.
 - **Sauvegarde / restauration** — scripts fournis pour la base et les médias.
 
 ## 🏗️ Architecture
@@ -50,11 +54,13 @@ profils utilisateurs.
 |------------|------------------------------------------------------------|-------|
 | `frontend` | Interface web (SPA)                                        | React + Vite + Tailwind, servie par nginx |
 | `backend`  | API REST, auth, import, recherche ; applique les migrations | Node 20 + Fastify + Prisma |
-| `worker`   | Tâches longues : parsing CSV, enrichissement, pochettes    | Node 20 + BullMQ |
+| `worker`   | Tâches longues : parsing CSV, enrichissement Discogs, pochettes, paroles | Node 20 + BullMQ |
 | `db`       | Base de données principale                                 | PostgreSQL 16 |
 | `redis`    | File d'attente + cache                                     | Redis 7 |
 
-Le backend et le worker partagent une seule image (même code, deux points d'entrée).
+Le backend et le worker partagent une seule image (même code, deux points d'entrée). Le worker
+traite trois files BullMQ : `import` (parsing CSV), `enrich` (Discogs, *rate-limité*) et `lyrics`
+(Genius, séparée pour ne pas ralentir l'enrichissement).
 
 ## 🚀 Installation
 
@@ -95,7 +101,8 @@ Au premier lancement, l'application vous invite à **créer le premier compte**.
 | `FRONTEND_PORT` | Port public de l'interface (défaut `8080`) |
 | `DISCOGS_TOKEN` | Jeton d'accès personnel Discogs (enrichissement) |
 | `DISCOGS_USER_AGENT` | User-Agent envoyé à Discogs (requis par leur API) |
-| `MUSICBRAINZ_USER_AGENT`, `GENIUS_ACCESS_TOKEN` | Pour l'enrichissement futur |
+| `GENIUS_ACCESS_TOKEN` | *Client Access Token* Genius (active les paroles) — https://genius.com/api-clients |
+| `MUSICBRAINZ_USER_AGENT` | User-Agent MusicBrainz (enrichissement à venir ; lecture sans OAuth) |
 
 ## 💾 Sauvegarde & restauration
 
@@ -124,12 +131,14 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 
 ## 🗺️ Feuille de route
 
-- [x] Import Discogs + enrichissement (pochettes, crédits, tracklist)
-- [x] Bibliothèque (mur / bac), fiches détaillées, recherche croisée
+- [x] Import Discogs + enrichissement (pochettes recto/verso, crédits, tracklist)
+- [x] Bibliothèque (mur / bac feuilletable), fiches détaillées, recherche croisée
 - [x] Rangement physique, ajout manuel, profils
+- [x] **Paroles via Genius** (récupération automatique piste par piste)
+- [x] **Globe / carte du monde** interactif des origines
+- [x] Mode vitrine 3D, mode aléatoire, zoom pochettes, ré-enrichissement global
 - [ ] Enrichissement **MusicBrainz** (origine des artistes, membres de groupes, instruments)
-- [ ] Enrichissement **Genius** (anecdotes, annotations)
-- [ ] **Globe / carte du monde** interactif
+- [ ] Enrichissement **Genius** des anecdotes / annotations
 - [ ] Moteur de recherche dédié (**Meilisearch**) : recherche floue, paroles, anecdotes
 - [ ] Statistiques avancées, timeline, exploration par instruments, thèmes personnalisables
 
