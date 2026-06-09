@@ -4,7 +4,9 @@ import { useReleases } from '../api/hooks';
 import { api } from '../api/client';
 import { ReleaseCard } from '../components/ReleaseCard';
 import { CrateBrowser } from '../components/CrateBrowser';
+import { RandomRoulette } from '../components/RandomRoulette';
 import { Spinner } from '../components/Spinner';
+import { ReleaseListItem } from '../api/types';
 
 const SORTS = [
   { value: 'addedDesc', label: 'Ajout récent' },
@@ -21,11 +23,15 @@ export default function LibraryPage() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const navigate = useNavigate();
+  const [pick, setPick] = useState<ReleaseListItem | null>(null);
+  const [rolling, setRolling] = useState(false);
 
   async function pickRandom() {
+    if (rolling) return;
     try {
-      const { data } = await api.get<{ id: string | null }>('/releases/random');
-      if (data.id) navigate(`/release/${data.id}`);
+      const { data } = await api.get<ReleaseListItem>('/releases/random');
+      setPick(data);
+      setRolling(true);
     } catch {
       /* empty collection */
     }
@@ -37,6 +43,17 @@ export default function LibraryPage() {
 
   return (
     <div>
+      {rolling && pick && (
+        <RandomRoulette
+          pool={items}
+          pick={pick}
+          onGo={(id) => {
+            setRolling(false);
+            navigate(`/release/${id}`);
+          }}
+          onCancel={() => setRolling(false)}
+        />
+      )}
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-3xl font-bold">Bibliothèque</h1>

@@ -142,8 +142,9 @@ export async function releaseRoutes(app: FastifyInstance) {
     const count = await prisma.release.count();
     if (count === 0) throw notFound('Collection vide');
     const skip = Math.floor(Math.random() * count);
-    const r = await prisma.release.findFirst({ skip, select: { id: true } });
-    return { id: r?.id ?? null };
+    const r = await prisma.release.findFirst({ skip });
+    if (!r) throw notFound('Collection vide');
+    return toListItem(r);
   });
 
   // ── Detail ────────────────────────────────────────────────────────────────
