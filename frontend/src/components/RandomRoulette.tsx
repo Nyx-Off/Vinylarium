@@ -66,15 +66,21 @@ export function RandomRoulette({
   return (
     <div
       onClick={() => (landed ? onGo(pick.id) : onCancel())}
-      className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-ink/92 p-6 backdrop-blur-sm"
+      className="animate-fadeup fixed inset-0 z-[60] flex flex-col items-center justify-center bg-ink/90 p-6 backdrop-blur-sm"
+      style={{
+        backgroundImage:
+          'radial-gradient(circle at 50% 42%, rgba(0,0,0,0) 28%, rgba(0,0,0,0.6) 100%)',
+      }}
     >
       <p className="mb-5 font-display text-2xl font-bold text-cream">
         {landed ? '✦ Et c’est…' : '🎲 Tirage au sort…'}
       </p>
 
       <div
-        className={`relative aspect-square w-[min(56vh,80vw)] overflow-hidden rounded-xl shadow-2xl ring-1 ring-cream/10 ${
-          landed ? 'animate-land ring-2 ring-accent' : ''
+        className={`relative aspect-square overflow-hidden rounded-xl ring-cream/10 transition-all duration-500 ease-out ${
+          landed
+            ? 'w-[min(68vh,90vw)] ring-2 ring-accent shadow-[0_35px_90px_-20px_rgba(184,69,31,0.65)]'
+            : 'w-[min(48vh,74vw)] shadow-2xl ring-1'
         }`}
       >
         <div key={frame} className={landed ? '' : 'animate-roll'}>
