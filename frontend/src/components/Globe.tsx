@@ -284,7 +284,7 @@ export function Globe({ origins, onSelect }: Props) {
   };
 
   return (
-    <div className="relative mx-auto w-full max-w-[520px] select-none">
+    <div className="relative mx-auto w-full max-w-[min(82vh,820px)] select-none">
       <canvas
         ref={canvasRef}
         className="aspect-square w-full cursor-grab touch-none active:cursor-grabbing"
