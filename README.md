@@ -26,10 +26,10 @@ profils utilisateurs.
 - **Import Discogs** — déposez votre export CSV, suivez la progression en direct, dédoublonnage automatique.
 - **Enrichissement automatique** — un *worker* récupère pochettes (recto **et verso**), crédits, musiciens, tracklist, labels, pays, genres et styles via l'API Discogs (en respectant les quotas).
 - **Paroles (Genius)** — récupération automatique des paroles piste par piste lors de l'enrichissement (file dédiée, *best-effort*), ou à la demande.
-- **Bibliothèque visuelle** — mur de pochettes ou **bac à vinyles** (feuilletage vertical façon disquaire), bouton **« au hasard »**, responsive du mobile à la tablette.
+- **Bibliothèque visuelle** — mur de pochettes ou **bac à vinyles** (feuilletage vertical façon disquaire), bouton **« au hasard »** avec effet roulette, responsive du mobile à la tablette.
 - **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production), tracklist, paroles, identifiants, versions (live, réédition, remaster…), notes, lien Discogs ; clic sur une pochette pour l'agrandir.
 - **Mode vitrine** — affichage plein écran d'un disque, pochette en **objet 3D** qui tourne pour montrer recto/verso (pensé tablette).
-- **Globe interactif** — carte du monde manipulable (rotation, glisser) des origines de pressage ; clic sur un pays pour filtrer.
+- **Globe interactif** — carte du monde manipulable (rotation, glisser, **zoom molette / pincement**) des origines de pressage ; clic sur un pays pour filtrer.
 - **Recherche croisée** — filtrez par artiste, instrument (« qui joue de la basse »), genre, style, label, pays, décennie, version, tag, emplacement…
 - **Rangement physique** — décrivez meubles, étagères, bacs et positions ; retrouvez et filtrez vos disques par emplacement.
 - **Ajout manuel** — pour les disques absents de Discogs.
