@@ -11,6 +11,7 @@ import { HttpError } from './lib/errors';
 import { authRoutes } from './modules/auth/routes';
 import { userRoutes } from './modules/users/routes';
 import { releaseRoutes } from './modules/releases/routes';
+import { artistRoutes } from './modules/artists/routes';
 import { importRoutes } from './modules/import/routes';
 import { searchRoutes } from './modules/search/routes';
 import { storageRoutes } from './modules/storage/routes';
@@ -71,6 +72,7 @@ export async function buildApp() {
       await api.register(authRoutes, { prefix: '/auth' });
       await api.register(userRoutes, { prefix: '/users' });
       await api.register(releaseRoutes, { prefix: '/releases' });
+      await api.register(artistRoutes, { prefix: '/artists' });
       await api.register(importRoutes, { prefix: '/import' });
       await api.register(searchRoutes, { prefix: '/search' });
       await api.register(storageRoutes, { prefix: '/storage' });

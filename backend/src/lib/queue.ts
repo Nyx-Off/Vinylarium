@@ -4,7 +4,10 @@ import { bullConnection } from './redis';
 export const QUEUE_IMPORT = 'import';
 export const QUEUE_ENRICH = 'enrich';
 export const QUEUE_LYRICS = 'lyrics';
-export const QUEUE_ARTIST_ORIGIN = 'artist-origin';
+// One queue for EVERY MusicBrainz call (origin searches + relations lookups)
+// so a single 1 req/s limiter covers them all. Job name picks the handler:
+// 'origin' | 'relations'.
+export const QUEUE_MUSICBRAINZ = 'musicbrainz';
 
 export interface ImportJobData {
   importJobId: string;
@@ -18,15 +21,17 @@ export interface LyricsJobData {
   releaseId: string;
 }
 
-export interface ArtistOriginJobData {
+export interface MusicBrainzJobData {
   artistId: string;
 }
 
 /**
- * Stable jobId so the same artist is never queued twice at once (compilations
- * enqueue the same artists over and over while the first lookup is pending).
+ * Stable jobIds so the same artist is never queued twice at once for the same
+ * lookup (compilations enqueue the same artists over and over while the first
+ * one is pending).
  */
 export const artistOriginJobId = (artistId: string) => `origin-${artistId}`;
+export const artistRelationsJobId = (artistId: string) => `rel-${artistId}`;
 
 /** Producers used by the API to enqueue background work. */
 export const importQueue = new Queue<ImportJobData, void, string>(QUEUE_IMPORT, {
@@ -53,10 +58,10 @@ export const lyricsQueue = new Queue<LyricsJobData, void, string>(QUEUE_LYRICS, 
   },
 });
 
-// MusicBrainz artist-origin lookups: hard-capped at ~1 req/s by the worker,
-// so this queue drains slowly — never put anything blocking on it.
-export const artistOriginQueue = new Queue<ArtistOriginJobData, void, string>(
-  QUEUE_ARTIST_ORIGIN,
+// MusicBrainz lookups: hard-capped at ~1 req/s by the worker, so this queue
+// drains slowly — never put anything blocking on it.
+export const musicbrainzQueue = new Queue<MusicBrainzJobData, void, string>(
+  QUEUE_MUSICBRAINZ,
   {
     connection: bullConnection,
     defaultJobOptions: {

@@ -1,16 +1,17 @@
 import { Worker } from 'bullmq';
 import { bullConnection } from './lib/redis';
-import { artistOriginQueue, enrichQueue } from './lib/queue';
+import { enrichQueue, musicbrainzQueue } from './lib/queue';
 import {
-  ArtistOriginJobData,
   EnrichJobData,
   ImportJobData,
   LyricsJobData,
-  QUEUE_ARTIST_ORIGIN,
+  MusicBrainzJobData,
   QUEUE_ENRICH,
   QUEUE_IMPORT,
   QUEUE_LYRICS,
+  QUEUE_MUSICBRAINZ,
   artistOriginJobId,
+  artistRelationsJobId,
 } from './lib/queue';
 import { ensureStorageDirs } from './lib/storage';
 import { seedRoles } from './lib/seed';
@@ -19,6 +20,7 @@ import { processImport } from './worker/jobs/import';
 import { processEnrich } from './worker/jobs/enrich';
 import { processLyrics } from './worker/jobs/lyrics';
 import { processArtistOrigin } from './worker/jobs/artist-origin';
+import { processArtistRelations } from './worker/jobs/artist-relations';
 import { discogs } from './worker/clients/discogs';
 import { genius } from './worker/clients/genius';
 
@@ -44,33 +46,48 @@ async function recoverStuckEnrichments() {
 }
 
 /**
- * Queue MusicBrainz origin lookups for billed artists never tried (PENDING)
- * or that failed transiently (FAILED). The stable jobId dedupes against jobs
- * already sitting in Redis from a previous run, so booting is idempotent.
+ * Queue MusicBrainz lookups for billed artists: origin searches never tried
+ * (PENDING) or failed transiently (FAILED), plus relations lookups for
+ * artists whose mbid is known. Stable jobIds dedupe against jobs already
+ * sitting in Redis from a previous run, so booting is idempotent.
  */
-async function backfillArtistOrigins() {
+async function backfillMusicBrainz() {
   // Failed jobs keep their jobId reserved — purge them so FAILED can requeue.
-  await artistOriginQueue.clean(0, 100_000, 'failed').catch(() => undefined);
-  const artists = await prisma.artist.findMany({
+  await musicbrainzQueue.clean(0, 100_000, 'failed').catch(() => undefined);
+
+  const origins = await prisma.artist.findMany({
     where: { originStatus: { in: ['PENDING', 'FAILED'] }, releases: { some: {} } },
     select: { id: true },
   });
-  if (artists.length === 0) return;
-  await artistOriginQueue.addBulk(
-    artists.map((a) => ({
-      name: 'artist-origin',
+  const relations = await prisma.artist.findMany({
+    where: { relationsStatus: { in: ['PENDING', 'FAILED'] }, mbid: { not: null } },
+    select: { id: true },
+  });
+
+  const jobs = [
+    ...origins.map((a) => ({
+      name: 'origin',
       data: { artistId: a.id },
       opts: { jobId: artistOriginJobId(a.id) },
     })),
+    ...relations.map((a) => ({
+      name: 'relations',
+      data: { artistId: a.id },
+      opts: { jobId: artistRelationsJobId(a.id) },
+    })),
+  ];
+  if (jobs.length === 0) return;
+  await musicbrainzQueue.addBulk(jobs);
+  console.log(
+    `Queued ${origins.length} MusicBrainz origin lookup(s) and ${relations.length} relations lookup(s).`,
   );
-  console.log(`Queued ${artists.length} MusicBrainz origin lookup(s).`);
 }
 
 async function main() {
   await ensureStorageDirs();
   await seedRoles();
   await recoverStuckEnrichments();
-  await backfillArtistOrigins();
+  await backfillMusicBrainz();
 
   const importWorker = new Worker<ImportJobData, void, string>(
     QUEUE_IMPORT,
@@ -98,11 +115,13 @@ async function main() {
     { connection: bullConnection, concurrency: 1 },
   );
 
-  // MusicBrainz allows 1 request/second — stay just under it.
-  const originWorker = new Worker<ArtistOriginJobData, void, string>(
-    QUEUE_ARTIST_ORIGIN,
+  // MusicBrainz allows 1 request/second — every MB call (origin search or
+  // relations lookup) goes through this single limited worker.
+  const musicbrainzWorker = new Worker<MusicBrainzJobData, void, string>(
+    QUEUE_MUSICBRAINZ,
     async (job) => {
-      await processArtistOrigin(job.data.artistId);
+      if (job.name === 'relations') await processArtistRelations(job.data.artistId);
+      else await processArtistOrigin(job.data.artistId);
     },
     { connection: bullConnection, concurrency: 1, limiter: { max: 1, duration: 1100 } },
   );
@@ -111,7 +130,7 @@ async function main() {
     ['import', importWorker],
     ['enrich', enrichWorker],
     ['lyrics', lyricsWorker],
-    ['artist-origin', originWorker],
+    ['musicbrainz', musicbrainzWorker],
   ];
   for (const [name, w] of workers) {
     w.on('failed', (job, err) =>
@@ -135,17 +154,18 @@ async function main() {
     }
   });
 
-  // Same pattern as enrich: when origin attempts are exhausted, mark the
+  // Same pattern as enrich: when MusicBrainz attempts are exhausted, mark the
   // artist FAILED (it will be retried on the next worker boot).
-  originWorker.on('failed', async (job) => {
+  musicbrainzWorker.on('failed', async (job) => {
     if (!job) return;
     const attempts = job.opts.attempts ?? 1;
     if (job.attemptsMade >= attempts) {
+      const data =
+        job.name === 'relations'
+          ? { relationsStatus: 'FAILED' as const, relationsCheckedAt: new Date() }
+          : { originStatus: 'FAILED' as const, originCheckedAt: new Date() };
       await prisma.artist
-        .update({
-          where: { id: job.data.artistId },
-          data: { originStatus: 'FAILED', originCheckedAt: new Date() },
-        })
+        .update({ where: { id: job.data.artistId }, data })
         .catch(() => undefined);
     }
   });
@@ -153,7 +173,7 @@ async function main() {
   console.log(
     `Vinylarium worker started (Discogs auth: ${discogs.hasAuth() ? 'yes' : 'no'}, ` +
       `enrich limit: ${max}/min, Genius lyrics: ${genius.hasAuth() ? 'yes' : 'no'}, ` +
-      `MusicBrainz origins: 1 req/s)`,
+      `MusicBrainz: 1 req/s)`,
   );
 
   const shutdown = async () => {
@@ -161,7 +181,7 @@ async function main() {
       importWorker.close(),
       enrichWorker.close(),
       lyricsWorker.close(),
-      originWorker.close(),
+      musicbrainzWorker.close(),
     ]);
     process.exit(0);
   };

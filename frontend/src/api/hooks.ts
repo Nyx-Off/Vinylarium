@@ -135,6 +135,14 @@ export function useIntegrations() {
   });
 }
 
+export function useArtist(id?: string) {
+  return useQuery({
+    enabled: !!id,
+    queryKey: ['artist', id],
+    queryFn: async () => (await api.get<T.ArtistDetail>(`/artists/${id}`)).data,
+  });
+}
+
 export function useArtistSearch(q: string) {
   return useQuery({
     queryKey: ['artists', q],

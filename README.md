@@ -26,6 +26,7 @@ profils utilisateurs.
 - **Import Discogs** — déposez votre export CSV, suivez la progression en direct, dédoublonnage automatique.
 - **Enrichissement automatique** — un *worker* récupère **toutes les images** (recto, verso, rondelles, encarts…), crédits, musiciens, tracklist, labels, pays, genres et styles via l'API Discogs (en respectant les quotas).
 - **Origine des artistes (MusicBrainz)** — le worker géolocalise chaque artiste/groupe (1 req/s, sans jeton) : le globe montre d'où vient *la musique*, pas seulement où le vinyle a été pressé.
+- **Fiches artistes (MusicBrainz)** — pour chaque groupe : **membres** avec instruments, périodes (arrivée/départ, deux passages distincts), badge fondateur ; pour chaque musicien : ses groupes ; plus ses disques et ses apparitions en crédit dans la collection.
 - **Paroles (Genius)** — récupération automatique des paroles piste par piste lors de l'enrichissement (file dédiée, *best-effort*), ou à la demande.
 - **Bibliothèque visuelle** — mur de pochettes ou **bac à vinyles** (feuilletage vertical façon disquaire), bouton **« au hasard »** avec effet roulette, responsive du mobile à la tablette.
 - **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production), tracklist, paroles, identifiants, versions (live, réédition, remaster…), notes, lien Discogs ; **galerie de toutes les images** (recto / verso / photos) avec visionneuse plein écran navigable.
@@ -138,7 +139,7 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 - [x] **Paroles via Genius** (récupération automatique piste par piste)
 - [x] **Globe / carte du monde** interactif : origine des **artistes** (MusicBrainz) ou du pressage
 - [x] Mode vitrine 3D (inertie tactile), mode aléatoire, zoom pochettes, ré-enrichissement global
-- [ ] Enrichissement **MusicBrainz** étendu (membres de groupes, instruments)
+- [x] **Fiches artistes** : membres de groupes, instruments et périodes (MusicBrainz)
 - [ ] Enrichissement **Genius** des anecdotes / annotations
 - [ ] Moteur de recherche dédié (**Meilisearch**) : recherche floue, paroles, anecdotes
 - [ ] Statistiques avancées, timeline, exploration par instruments, thèmes personnalisables

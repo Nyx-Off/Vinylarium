@@ -18,7 +18,7 @@ function CreditGroup({ title, credits }: { title: string; credits: Credit[] }) {
         {credits.map((c) => (
           <Link
             key={c.id}
-            to={`/search?artistId=${c.artist.id}`}
+            to={`/artist/${c.artist.id}`}
             className="chip hover:bg-accent hover:text-cream"
             title={c.role + (c.tracks ? ` (${c.tracks})` : '')}
           >
@@ -238,7 +238,18 @@ export default function ReleaseDetailPage() {
         <div className="space-y-5">
           <div>
             <h1 className="font-display text-4xl font-bold leading-tight">{r.title}</h1>
-            <p className="mt-1 text-lg text-mocha">{r.artistDisplay}</p>
+            <p className="mt-1 text-lg text-mocha">
+              {r.artists.length > 0
+                ? r.artists.map((a, i) => (
+                    <span key={`${a.id}-${i}`}>
+                      <Link to={`/artist/${a.id}`} className="hover:text-accent hover:underline">
+                        {a.anv || a.name}
+                      </Link>
+                      {a.joinRel ? ` ${a.joinRel} ` : i < r.artists.length - 1 ? ', ' : ''}
+                    </span>
+                  ))
+                : r.artistDisplay}
+            </p>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {r.year && <span className="chip">{r.year}</span>}
               {r.country && <span className="chip">{r.country}</span>}

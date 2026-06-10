@@ -5,6 +5,7 @@ import { Spinner } from './components/Spinner';
 import ProfilesPage from './pages/ProfilesPage';
 import LibraryPage from './pages/LibraryPage';
 import ReleaseDetailPage from './pages/ReleaseDetailPage';
+import ArtistPage from './pages/ArtistPage';
 import SearchPage from './pages/SearchPage';
 import StoragePage from './pages/StoragePage';
 import ImportPage from './pages/ImportPage';
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/library" replace />} />
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/release/:id" element={<ReleaseDetailPage />} />
+        <Route path="/artist/:id" element={<ArtistPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/storage" element={<StoragePage />} />
         <Route path="/map" element={<MapPage />} />

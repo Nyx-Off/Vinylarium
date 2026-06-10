@@ -205,3 +205,33 @@ export interface ArtistSearchResult {
   releaseCount: number;
   creditCount: number;
 }
+
+export interface BandMember {
+  id: string;
+  artistId: string | null; // set when the member exists in the library
+  name: string;
+  attributes: string[]; // instruments / roles; "original" = founding member
+  beginDate: string | null;
+  endDate: string | null;
+  ended: boolean;
+}
+
+export interface ArtistDetail {
+  id: string;
+  name: string;
+  realName: string | null;
+  profile: string | null;
+  imageUrl: string | null;
+  discogsUri: string | null;
+  mbid: string | null;
+  type: string | null; // "Group" | "Person" | …
+  beginDate: string | null;
+  endDate: string | null;
+  origin: { code: string; name: string } | null;
+  originStatus: string;
+  relationsStatus: string;
+  members: BandMember[];
+  memberOf: { artistId: string; name: string }[];
+  releases: ReleaseListItem[];
+  appearsOn: (ReleaseListItem & { roles: string[] })[];
+}

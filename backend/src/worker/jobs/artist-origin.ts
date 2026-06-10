@@ -2,6 +2,7 @@ import { prisma } from '../../db/prisma';
 import { musicbrainz, MbArtist } from '../clients/musicbrainz';
 import { CountryGeo, geoForCountry, geoForISO } from '../../lib/countries';
 import { upsertCountryByGeo } from '../../lib/upserts';
+import { artistRelationsJobId, musicbrainzQueue } from '../../lib/queue';
 
 /** Placeholder names that can never resolve to a real origin. */
 const NON_ARTISTS = new Set(['various', 'various artists', 'unknown artist', 'unknown', 'no artist', 'traditional']);
@@ -86,4 +87,16 @@ export async function processArtistOrigin(artistId: string): Promise<void> {
       originCheckedAt: new Date(),
     },
   });
+
+  if (match.mbid) {
+    // Band-member rows fetched before this artist was known can now link to it.
+    await prisma.bandMember.updateMany({
+      where: { mbid: match.mbid, memberId: null },
+      data: { memberId: artistId },
+    });
+    // Chain the relations lookup (members, type, active period).
+    await musicbrainzQueue
+      .add('relations', { artistId }, { jobId: artistRelationsJobId(artistId) })
+      .catch(() => undefined);
+  }
 }
