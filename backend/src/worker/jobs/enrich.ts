@@ -1,7 +1,7 @@
 import { prisma } from '../../db/prisma';
 import { discogs, DiscogsError } from '../clients/discogs';
 import { genius } from '../clients/genius';
-import { artistOriginJobId, artistOriginQueue, lyricsQueue } from '../../lib/queue';
+import { artistOriginJobId, lyricsQueue, musicbrainzQueue } from '../../lib/queue';
 import { applyDiscogsRelease } from '../lib/map-discogs';
 
 /** Enrich a single release from the Discogs API. Throws to let BullMQ retry. */
@@ -46,10 +46,10 @@ export async function processEnrich(releaseId: string): Promise<void> {
       select: { id: true },
     });
     if (pendingArtists.length > 0) {
-      await artistOriginQueue
+      await musicbrainzQueue
         .addBulk(
           pendingArtists.map((a) => ({
-            name: 'artist-origin',
+            name: 'origin',
             data: { artistId: a.id },
             opts: { jobId: artistOriginJobId(a.id) },
           })),

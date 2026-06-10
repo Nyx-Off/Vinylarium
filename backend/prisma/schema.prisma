@@ -229,6 +229,14 @@ model Artist {
   originStatus    ArtistOriginStatus @default(PENDING)
   originCheckedAt DateTime?
 
+  // MusicBrainz relations (band members, type, active period) — second
+  // lookup, chained after the origin search once an mbid is known.
+  mbType             String? // "Group" | "Person" | "Orchestra" | ...
+  mbBeginDate        String? // founding / birth date as written ("1965", "1965-03")
+  mbEndDate          String? // dissolution / death date
+  relationsStatus    ArtistOriginStatus @default(PENDING)
+  relationsCheckedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -237,11 +245,37 @@ model Artist {
   credits       Credit[]
   anecdotes     Anecdote[]
   externalLinks ExternalLink[]
+  members       BandMember[]    @relation("GroupMembers") // when this artist is a band
+  memberships   BandMember[]    @relation("MemberOf") // bands this artist plays in
 
   @@index([name])
   @@index([sortName])
   @@index([originStatus])
+  @@index([relationsStatus])
   @@map("artists")
+}
+
+/// A "member of band" MusicBrainz relation. Rows are owned by the GROUP's
+/// relations lookup (cleared + rebuilt on refresh); `memberId` links to an
+/// Artist row of our library when one matches (by mbid, then exact name).
+model BandMember {
+  id         String   @id @default(cuid())
+  groupId    String
+  memberId   String?
+  name       String // person name as written in MusicBrainz
+  mbid       String? // person's MusicBrainz id
+  attributes String[] // instruments / roles ("guitar", "lead vocals", "original"…)
+  beginDate  String? // "1968" / "1968-07"
+  endDate    String?
+  ended      Boolean  @default(false)
+  position   Int      @default(0)
+
+  group  Artist  @relation("GroupMembers", fields: [groupId], references: [id], onDelete: Cascade)
+  member Artist? @relation("MemberOf", fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@index([groupId])
+  @@index([memberId])
+  @@map("band_members")
 }
 
 /// Primary (billed) artists of a release — the `artists[]` array in Discogs.

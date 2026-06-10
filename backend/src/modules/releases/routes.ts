@@ -14,7 +14,7 @@ import {
   upsertStyle,
   upsertTag,
 } from '../../lib/upserts';
-import { artistOriginJobId, artistOriginQueue, enrichQueue, lyricsQueue } from '../../lib/queue';
+import { artistOriginJobId, enrichQueue, lyricsQueue, musicbrainzQueue } from '../../lib/queue';
 import { buildReleaseOrderBy, buildReleaseWhere, releaseQuerySchema } from './query';
 import { releaseDetailInclude, toDetail, toListItem } from './serialize';
 
@@ -198,8 +198,8 @@ export async function releaseRoutes(app: FastifyInstance) {
       data: { releaseId: release.id, artistId: primary.id, position: 0 },
     });
     if (primary.originStatus === 'PENDING') {
-      await artistOriginQueue
-        .add('artist-origin', { artistId: primary.id }, { jobId: artistOriginJobId(primary.id) })
+      await musicbrainzQueue
+        .add('origin', { artistId: primary.id }, { jobId: artistOriginJobId(primary.id) })
         .catch(() => undefined);
     }
 
