@@ -15,6 +15,13 @@ export const releaseQuerySchema = z.object({
   style: z.string().optional(),
   label: z.string().optional(),
   country: z.string().optional(),
+  // ISO code — releases whose billed artist originates from this country.
+  origin: z
+    .string()
+    .trim()
+    .length(2)
+    .transform((s) => s.toUpperCase())
+    .optional(),
   tag: z.string().optional(),
   storageLocationId: z.string().optional(),
   year: z.coerce.number().int().optional(),
@@ -53,6 +60,8 @@ export function buildReleaseWhere(qp: ReleaseQuery): Prisma.ReleaseWhereInput {
   if (qp.year !== undefined) and.push({ year: qp.year });
   if (qp.decade !== undefined) and.push({ decade: qp.decade });
   if (qp.country) and.push({ country: { equals: qp.country, mode: 'insensitive' } });
+  if (qp.origin)
+    and.push({ artists: { some: { artist: { originCountry: { code: qp.origin } } } } });
   if (qp.genre) and.push({ genres: { some: { genre: { name: qp.genre } } } });
   if (qp.style) and.push({ styles: { some: { style: { name: qp.style } } } });
   if (qp.label) and.push({ labels: { some: { label: { name: qp.label } } } });

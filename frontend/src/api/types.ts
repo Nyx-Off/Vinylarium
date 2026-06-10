@@ -111,7 +111,7 @@ export interface ReleaseDetail {
   styles: string[];
   formats: { name: string; qty: string | null; text: string | null; descriptions: string[] }[];
   tracklist: Track[];
-  images: { id: string; type: string; url: string | null }[];
+  images: { id: string; type: string; url: string | null; width: number | null; height: number | null }[];
   lyrics: { id: string; trackId: string | null; text: string; source: string; sourceUrl: string | null }[];
   anecdotes: { id: string; title: string | null; body: string; source: string; sourceUrl: string | null }[];
   identifiers: { type: string; value: string; description: string | null }[];
@@ -173,6 +173,15 @@ export interface Origin {
   lat: number;
   lng: number;
   count: number;
+}
+
+export type OriginMode = 'artists' | 'pressing';
+
+export interface OriginsResponse {
+  mode: OriginMode;
+  origins: Origin[];
+  artistsResolved: number;
+  artistsPending: number;
 }
 
 export interface ReenrichStatus {

@@ -16,20 +16,21 @@ chaleureuse et moderne, pensée pour *explorer* sa collection plutôt que simple
 mur de pochettes, bac à vinyles, fiches détaillées, recherche croisée, rangement physique et
 profils utilisateurs.
 
-> État : **fonctionnel.** Import Discogs, bibliothèque visuelle, fiches détaillées (recto **et verso**),
-> recherche avancée, paroles via Genius, globe interactif, mode vitrine, ajout manuel, rangement
-> physique et profils sont opérationnels. L'enrichissement MusicBrainz reste à venir
-> (voir la [feuille de route](#-feuille-de-route)).
+> État : **fonctionnel.** Import Discogs, bibliothèque visuelle, fiches détaillées (galerie d'images
+> complète), recherche avancée, paroles via Genius, **origine des artistes via MusicBrainz**, globe
+> interactif, mode vitrine (avec inertie tactile), ajout manuel, rangement physique et profils sont
+> opérationnels (voir la [feuille de route](#-feuille-de-route)).
 
 ## ✨ Fonctionnalités
 
 - **Import Discogs** — déposez votre export CSV, suivez la progression en direct, dédoublonnage automatique.
-- **Enrichissement automatique** — un *worker* récupère pochettes (recto **et verso**), crédits, musiciens, tracklist, labels, pays, genres et styles via l'API Discogs (en respectant les quotas).
+- **Enrichissement automatique** — un *worker* récupère **toutes les images** (recto, verso, rondelles, encarts…), crédits, musiciens, tracklist, labels, pays, genres et styles via l'API Discogs (en respectant les quotas).
+- **Origine des artistes (MusicBrainz)** — le worker géolocalise chaque artiste/groupe (1 req/s, sans jeton) : le globe montre d'où vient *la musique*, pas seulement où le vinyle a été pressé.
 - **Paroles (Genius)** — récupération automatique des paroles piste par piste lors de l'enrichissement (file dédiée, *best-effort*), ou à la demande.
 - **Bibliothèque visuelle** — mur de pochettes ou **bac à vinyles** (feuilletage vertical façon disquaire), bouton **« au hasard »** avec effet roulette, responsive du mobile à la tablette.
-- **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production), tracklist, paroles, identifiants, versions (live, réédition, remaster…), notes, lien Discogs ; clic sur une pochette pour l'agrandir.
-- **Mode vitrine** — affichage plein écran d'un disque, pochette en **objet 3D** qui tourne pour montrer recto/verso (pensé tablette).
-- **Globe interactif** — carte du monde manipulable (rotation, glisser, **zoom molette / pincement**) des origines de pressage ; clic sur un pays pour filtrer.
+- **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production), tracklist, paroles, identifiants, versions (live, réédition, remaster…), notes, lien Discogs ; **galerie de toutes les images** (recto / verso / photos) avec visionneuse plein écran navigable.
+- **Mode vitrine** — affichage plein écran d'un disque, pochette en **objet 3D** qui tourne pour montrer recto/verso ; lancer la pochette au doigt lui donne de l'**inertie** (pensé tablette).
+- **Globe interactif** — globe « cartographie ancienne » manipulable (rotation, glisser, **zoom molette / pincement**), deux vues : **origine des artistes** (MusicBrainz) ou **pays de pressage** (Discogs) ; clic sur un pays pour filtrer.
 - **Recherche croisée** — filtrez par artiste, instrument (« qui joue de la basse »), genre, style, label, pays, décennie, version, tag, emplacement…
 - **Rangement physique** — décrivez meubles, étagères, bacs et positions ; retrouvez et filtrez vos disques par emplacement.
 - **Ajout manuel** — pour les disques absents de Discogs.
@@ -102,7 +103,7 @@ Au premier lancement, l'application vous invite à **créer le premier compte**.
 | `DISCOGS_TOKEN` | Jeton d'accès personnel Discogs (enrichissement) |
 | `DISCOGS_USER_AGENT` | User-Agent envoyé à Discogs (requis par leur API) |
 | `GENIUS_ACCESS_TOKEN` | *Client Access Token* Genius (active les paroles) — https://genius.com/api-clients |
-| `MUSICBRAINZ_USER_AGENT` | User-Agent MusicBrainz (enrichissement à venir ; lecture sans OAuth) |
+| `MUSICBRAINZ_USER_AGENT` | User-Agent MusicBrainz (origine des artistes ; lecture sans OAuth ni jeton) |
 
 ## 💾 Sauvegarde & restauration
 
@@ -131,13 +132,13 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 
 ## 🗺️ Feuille de route
 
-- [x] Import Discogs + enrichissement (pochettes recto/verso, crédits, tracklist)
-- [x] Bibliothèque (mur / bac feuilletable), fiches détaillées, recherche croisée
+- [x] Import Discogs + enrichissement (toutes les images typées recto/verso/photos, crédits, tracklist)
+- [x] Bibliothèque (mur / bac feuilletable), fiches détaillées + galerie d'images, recherche croisée
 - [x] Rangement physique, ajout manuel, profils
 - [x] **Paroles via Genius** (récupération automatique piste par piste)
-- [x] **Globe / carte du monde** interactif des origines
-- [x] Mode vitrine 3D, mode aléatoire, zoom pochettes, ré-enrichissement global
-- [ ] Enrichissement **MusicBrainz** (origine des artistes, membres de groupes, instruments)
+- [x] **Globe / carte du monde** interactif : origine des **artistes** (MusicBrainz) ou du pressage
+- [x] Mode vitrine 3D (inertie tactile), mode aléatoire, zoom pochettes, ré-enrichissement global
+- [ ] Enrichissement **MusicBrainz** étendu (membres de groupes, instruments)
 - [ ] Enrichissement **Genius** des anecdotes / annotations
 - [ ] Moteur de recherche dédié (**Meilisearch**) : recherche floue, paroles, anecdotes
 - [ ] Statistiques avancées, timeline, exploration par instruments, thèmes personnalisables

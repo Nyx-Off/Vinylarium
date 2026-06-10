@@ -124,10 +124,14 @@ export function toDetail(r: any) {
       duration: t.duration,
       type: t.type,
     })),
+    // Only locally stored bytes — the Discogs CDN rejects browser hotlinks,
+    // so a sourceUrl fallback would just render broken images.
     images: (r.images ?? []).map((img: any) => ({
       id: img.id,
       type: img.type,
-      url: mediaUrl(img.localPath) ?? img.sourceUrl,
+      url: mediaUrl(img.localPath),
+      width: img.width,
+      height: img.height,
     })),
     lyrics: (r.lyrics ?? []).map((l: any) => ({
       id: l.id,

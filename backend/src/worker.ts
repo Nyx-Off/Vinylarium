@@ -1,13 +1,16 @@
 import { Worker } from 'bullmq';
 import { bullConnection } from './lib/redis';
-import { enrichQueue } from './lib/queue';
+import { artistOriginQueue, enrichQueue } from './lib/queue';
 import {
+  ArtistOriginJobData,
   EnrichJobData,
   ImportJobData,
   LyricsJobData,
+  QUEUE_ARTIST_ORIGIN,
   QUEUE_ENRICH,
   QUEUE_IMPORT,
   QUEUE_LYRICS,
+  artistOriginJobId,
 } from './lib/queue';
 import { ensureStorageDirs } from './lib/storage';
 import { seedRoles } from './lib/seed';
@@ -15,6 +18,7 @@ import { prisma } from './db/prisma';
 import { processImport } from './worker/jobs/import';
 import { processEnrich } from './worker/jobs/enrich';
 import { processLyrics } from './worker/jobs/lyrics';
+import { processArtistOrigin } from './worker/jobs/artist-origin';
 import { discogs } from './worker/clients/discogs';
 import { genius } from './worker/clients/genius';
 
@@ -39,10 +43,34 @@ async function recoverStuckEnrichments() {
   console.log(`Requeued ${stuck.length} interrupted enrichment(s).`);
 }
 
+/**
+ * Queue MusicBrainz origin lookups for billed artists never tried (PENDING)
+ * or that failed transiently (FAILED). The stable jobId dedupes against jobs
+ * already sitting in Redis from a previous run, so booting is idempotent.
+ */
+async function backfillArtistOrigins() {
+  // Failed jobs keep their jobId reserved — purge them so FAILED can requeue.
+  await artistOriginQueue.clean(0, 100_000, 'failed').catch(() => undefined);
+  const artists = await prisma.artist.findMany({
+    where: { originStatus: { in: ['PENDING', 'FAILED'] }, releases: { some: {} } },
+    select: { id: true },
+  });
+  if (artists.length === 0) return;
+  await artistOriginQueue.addBulk(
+    artists.map((a) => ({
+      name: 'artist-origin',
+      data: { artistId: a.id },
+      opts: { jobId: artistOriginJobId(a.id) },
+    })),
+  );
+  console.log(`Queued ${artists.length} MusicBrainz origin lookup(s).`);
+}
+
 async function main() {
   await ensureStorageDirs();
   await seedRoles();
   await recoverStuckEnrichments();
+  await backfillArtistOrigins();
 
   const importWorker = new Worker<ImportJobData, void, string>(
     QUEUE_IMPORT,
@@ -70,10 +98,20 @@ async function main() {
     { connection: bullConnection, concurrency: 1 },
   );
 
+  // MusicBrainz allows 1 request/second — stay just under it.
+  const originWorker = new Worker<ArtistOriginJobData, void, string>(
+    QUEUE_ARTIST_ORIGIN,
+    async (job) => {
+      await processArtistOrigin(job.data.artistId);
+    },
+    { connection: bullConnection, concurrency: 1, limiter: { max: 1, duration: 1100 } },
+  );
+
   const workers: [string, Worker][] = [
     ['import', importWorker],
     ['enrich', enrichWorker],
     ['lyrics', lyricsWorker],
+    ['artist-origin', originWorker],
   ];
   for (const [name, w] of workers) {
     w.on('failed', (job, err) =>
@@ -97,13 +135,34 @@ async function main() {
     }
   });
 
+  // Same pattern as enrich: when origin attempts are exhausted, mark the
+  // artist FAILED (it will be retried on the next worker boot).
+  originWorker.on('failed', async (job) => {
+    if (!job) return;
+    const attempts = job.opts.attempts ?? 1;
+    if (job.attemptsMade >= attempts) {
+      await prisma.artist
+        .update({
+          where: { id: job.data.artistId },
+          data: { originStatus: 'FAILED', originCheckedAt: new Date() },
+        })
+        .catch(() => undefined);
+    }
+  });
+
   console.log(
     `Vinylarium worker started (Discogs auth: ${discogs.hasAuth() ? 'yes' : 'no'}, ` +
-      `enrich limit: ${max}/min, Genius lyrics: ${genius.hasAuth() ? 'yes' : 'no'})`,
+      `enrich limit: ${max}/min, Genius lyrics: ${genius.hasAuth() ? 'yes' : 'no'}, ` +
+      `MusicBrainz origins: 1 req/s)`,
   );
 
   const shutdown = async () => {
-    await Promise.all([importWorker.close(), enrichWorker.close(), lyricsWorker.close()]);
+    await Promise.all([
+      importWorker.close(),
+      enrichWorker.close(),
+      lyricsWorker.close(),
+      originWorker.close(),
+    ]);
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);

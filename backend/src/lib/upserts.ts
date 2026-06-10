@@ -1,6 +1,6 @@
 import { prisma } from '../db/prisma';
 import { categorizeRole } from './discogs-roles';
-import { geoForCountry } from './countries';
+import { CountryGeo, geoForCountry } from './countries';
 import { sortName } from './text';
 
 /** Find-or-create helpers shared by manual add (API) and enrichment (worker). */
@@ -36,6 +36,29 @@ export async function upsertCountry(name: string) {
     where: { name },
     update: geoData,
     create: { name, ...geoData },
+  });
+}
+
+/**
+ * Find-or-create a country from a resolved geo entry (artist origins). Reuses
+ * any row already carrying the ISO code — e.g. one created from a Discogs
+ * pressing string like "US" — instead of duplicating it per naming variant.
+ */
+export async function upsertCountryByGeo(geo: CountryGeo) {
+  const existing = await prisma.country.findFirst({ where: { code: geo.code } });
+  if (existing) {
+    if (existing.latitude == null || existing.longitude == null) {
+      return prisma.country.update({
+        where: { id: existing.id },
+        data: { latitude: geo.lat, longitude: geo.lng },
+      });
+    }
+    return existing;
+  }
+  return prisma.country.upsert({
+    where: { name: geo.name },
+    update: { code: geo.code, latitude: geo.lat, longitude: geo.lng },
+    create: { name: geo.name, code: geo.code, latitude: geo.lat, longitude: geo.lng },
   });
 }
 

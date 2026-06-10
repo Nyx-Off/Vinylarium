@@ -51,7 +51,7 @@ export default function ReleaseDetailPage() {
   const [form, setForm] = useState({ storageLocationId: '', storageSlot: '', tags: '', notes: '' });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
-  const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
+  const [zoom, setZoom] = useState<number | null>(null); // index into `gallery`
 
   useEffect(() => {
     if (r) {
@@ -134,9 +134,37 @@ export default function ReleaseDetailPage() {
     r.flags.isSpecialEdition && 'Édition spéciale',
   ].filter(Boolean) as string[];
 
+  // Every image Discogs provides, labelled by kind. Older entries (enriched
+  // before full-gallery downloads) fall back to the two legacy cover paths.
+  let photoNo = 0;
+  const gallery: { src: string; label: string }[] = r.images
+    .filter((i) => i.url)
+    .map((i) => ({
+      src: i.url!,
+      label: i.type === 'PRIMARY' ? 'Recto' : i.type === 'BACK' ? 'Verso' : `Photo ${++photoNo}`,
+    }));
+  if (gallery.length === 0) {
+    if (r.coverUrl) gallery.push({ src: r.coverUrl, label: 'Recto' });
+    if (r.backCoverUrl) gallery.push({ src: r.backCoverUrl, label: 'Verso' });
+  }
+  const frontIdx = Math.max(0, gallery.findIndex((g) => g.label === 'Recto'));
+  const zoomed = zoom != null ? gallery[zoom] : null;
+
   return (
     <div>
-      {zoom && <Lightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
+      {zoomed && (
+        <Lightbox
+          src={zoomed.src}
+          alt={`${zoomed.label} — ${r.title}`}
+          onClose={() => setZoom(null)}
+          onPrev={
+            gallery.length > 1
+              ? () => setZoom((z) => (z! + gallery.length - 1) % gallery.length)
+              : undefined
+          }
+          onNext={gallery.length > 1 ? () => setZoom((z) => (z! + 1) % gallery.length) : undefined}
+        />
+      )}
       <Link to="/library" className="mb-4 inline-block text-sm text-mocha hover:text-accent">
         ← Retour à la bibliothèque
       </Link>
@@ -146,21 +174,37 @@ export default function ReleaseDetailPage() {
         <div className="space-y-4">
           <button
             type="button"
-            onClick={() => r.coverUrl && setZoom({ src: r.coverUrl, alt: r.title })}
+            onClick={() => gallery.length > 0 && setZoom(frontIdx)}
             className={`block aspect-square w-full overflow-hidden rounded-2xl shadow-sleeve ring-1 ring-ink/10 ${
-              r.coverUrl ? 'cursor-zoom-in' : ''
+              gallery.length > 0 ? 'cursor-zoom-in' : ''
             }`}
           >
             <Cover src={r.coverUrl} title={r.title} artist={r.artistDisplay} />
           </button>
-          {r.backCoverUrl && (
-            <button
-              type="button"
-              onClick={() => setZoom({ src: r.backCoverUrl!, alt: 'Verso' })}
-              className="block aspect-square w-full cursor-zoom-in overflow-hidden rounded-2xl shadow-tile ring-1 ring-ink/10"
-            >
-              <Cover src={r.backCoverUrl} title="Verso" />
-            </button>
+
+          {/* All Discogs images: recto, verso, labels, inserts… */}
+          {gallery.length > 1 && (
+            <div className="grid grid-cols-3 gap-2">
+              {gallery.map((g, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setZoom(idx)}
+                  className="group relative aspect-square cursor-zoom-in overflow-hidden rounded-lg ring-1 ring-ink/10"
+                  title={g.label}
+                >
+                  <img
+                    src={g.src}
+                    alt={g.label}
+                    loading="lazy"
+                    className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                  />
+                  <span className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-ink/70 to-transparent px-1.5 pb-1 pt-3 text-[10px] font-medium text-cream/90">
+                    {g.label}
+                  </span>
+                </button>
+              ))}
+            </div>
           )}
           <Rating value={r.rating} />
           <Link to={`/showcase/${r.id}`} className="btn-primary w-full justify-center text-center">

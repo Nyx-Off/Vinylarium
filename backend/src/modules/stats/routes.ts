@@ -1,8 +1,9 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { prisma } from '../../db/prisma';
 import { config } from '../../config';
 import { fetchWithTimeout } from '../../lib/http';
-import { geoForCountry } from '../../lib/countries';
+import { geoForCountry, geoForISO } from '../../lib/countries';
 
 type IntegrationStatus = {
   name: string;
@@ -39,13 +40,18 @@ export async function statsRoutes(app: FastifyInstance) {
     // Genius
     const geniusConfigured = Boolean(config.genius.accessToken);
 
-    const [discogsOk, geniusOk] = await Promise.all([
+    const [discogsOk, geniusOk, musicbrainzOk] = await Promise.all([
       probe('https://api.discogs.com/', discogsHeaders),
       geniusConfigured
         ? probe('https://api.genius.com/search?q=test', {
             Authorization: `Bearer ${config.genius.accessToken}`,
           })
         : Promise.resolve(false),
+      // Cheap lookup of a stable entity (the "Various Artists" special artist).
+      probe('https://musicbrainz.org/ws/2/artist/89ad4ac3-39f7-470e-963a-56509c546377?fmt=json', {
+        'User-Agent': config.musicbrainz.userAgent,
+        Accept: 'application/json',
+      }),
     ]);
 
     const integrations: IntegrationStatus[] = [
@@ -71,9 +77,11 @@ export async function statsRoutes(app: FastifyInstance) {
       },
       {
         name: 'MusicBrainz',
-        configured: false,
-        ok: false,
-        detail: 'Pas encore implémenté',
+        configured: true, // no token needed, only a User-Agent
+        ok: musicbrainzOk,
+        detail: musicbrainzOk
+          ? 'Connecté — origine des artistes activée'
+          : 'Injoignable',
       },
     ];
 
@@ -81,33 +89,87 @@ export async function statsRoutes(app: FastifyInstance) {
   });
 
   // ── Geographic origins for the globe ──────────────────────────────────
-  app.get('/origins', async () => {
-    const grouped = await prisma.release.groupBy({
-      by: ['country'],
-      where: { country: { not: null } },
-      _count: { _all: true },
-    });
+  // mode=artists (default): where the artists/bands come from (MusicBrainz).
+  // mode=pressing: where the vinyl itself was pressed (Discogs country field).
+  app.get('/origins', async (req) => {
+    const { mode } = z
+      .object({ mode: z.enum(['artists', 'pressing']).default('artists') })
+      .parse(req.query);
 
-    // Several Discogs strings can map to the same point ("US"/"USA"); merge them.
-    const merged = new Map<string, { name: string; code: string; lat: number; lng: number; count: number }>();
-    for (const row of grouped) {
-      const geo = row.country ? geoForCountry(row.country) : null;
-      if (!geo) continue;
-      const existing = merged.get(geo.code);
-      if (existing) {
-        existing.count += row._count._all;
-      } else {
-        merged.set(geo.code, {
-          name: row.country!,
-          code: geo.code,
-          lat: geo.lat,
-          lng: geo.lng,
-          count: row._count._all,
-        });
+    type Bucket = { name: string; code: string; lat: number; lng: number; count: number };
+    const merged = new Map<string, Bucket>();
+
+    if (mode === 'artists') {
+      // One count per (release, origin country): an album lights up its
+      // artist's homeland once, a France+US duo lights up both.
+      const links = await prisma.releaseArtist.findMany({
+        where: { artist: { originCountryId: { not: null } } },
+        select: { releaseId: true, artist: { select: { originCountry: true } } },
+      });
+      const seen = new Set<string>();
+      for (const link of links) {
+        const c = link.artist.originCountry;
+        if (!c?.code) continue;
+        const geo =
+          c.latitude != null && c.longitude != null
+            ? { lat: c.latitude, lng: c.longitude }
+            : geoForISO(c.code);
+        if (!geo) continue;
+        const key = `${c.code}|${link.releaseId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const existing = merged.get(c.code);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          merged.set(c.code, {
+            name: geoForISO(c.code)?.name ?? c.name,
+            code: c.code,
+            lat: geo.lat,
+            lng: geo.lng,
+            count: 1,
+          });
+        }
+      }
+    } else {
+      const grouped = await prisma.release.groupBy({
+        by: ['country'],
+        where: { country: { not: null } },
+        _count: { _all: true },
+      });
+      // Several Discogs strings can map to the same point ("US"/"USA"); merge them.
+      for (const row of grouped) {
+        const geo = row.country ? geoForCountry(row.country) : null;
+        if (!geo) continue;
+        const existing = merged.get(geo.code);
+        if (existing) {
+          existing.count += row._count._all;
+        } else {
+          merged.set(geo.code, {
+            name: row.country!,
+            code: geo.code,
+            lat: geo.lat,
+            lng: geo.lng,
+            count: row._count._all,
+          });
+        }
       }
     }
 
-    return { origins: [...merged.values()].sort((a, b) => b.count - a.count) };
+    // Resolution progress, so the UI can say "origins still loading".
+    const [resolved, pendingOrigins] = await Promise.all([
+      prisma.artist.count({ where: { originStatus: 'FOUND', releases: { some: {} } } }),
+      prisma.artist.count({
+        where: { originStatus: { in: ['PENDING', 'FAILED'] }, releases: { some: {} } },
+      }),
+    ]);
+
+    return {
+      mode,
+      origins: [...merged.values()].sort((a, b) => b.count - a.count),
+      artistsResolved: resolved,
+      artistsPending: pendingOrigins,
+    };
   });
 
   app.get('/', async () => {
