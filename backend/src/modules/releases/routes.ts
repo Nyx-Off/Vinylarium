@@ -14,7 +14,7 @@ import {
   upsertStyle,
   upsertTag,
 } from '../../lib/upserts';
-import { enrichQueue, lyricsQueue } from '../../lib/queue';
+import { artistOriginJobId, artistOriginQueue, enrichQueue, lyricsQueue } from '../../lib/queue';
 import { buildReleaseOrderBy, buildReleaseWhere, releaseQuerySchema } from './query';
 import { releaseDetailInclude, toDetail, toListItem } from './serialize';
 
@@ -197,6 +197,11 @@ export async function releaseRoutes(app: FastifyInstance) {
     await prisma.releaseArtist.create({
       data: { releaseId: release.id, artistId: primary.id, position: 0 },
     });
+    if (primary.originStatus === 'PENDING') {
+      await artistOriginQueue
+        .add('artist-origin', { artistId: primary.id }, { jobId: artistOriginJobId(primary.id) })
+        .catch(() => undefined);
+    }
 
     // Labels / genres / styles / tags
     for (const name of body.labels) {

@@ -1,7 +1,7 @@
 import { prisma } from '../../db/prisma';
 import { discogs, DiscogsError } from '../clients/discogs';
 import { genius } from '../clients/genius';
-import { lyricsQueue } from '../../lib/queue';
+import { artistOriginJobId, artistOriginQueue, lyricsQueue } from '../../lib/queue';
 import { applyDiscogsRelease } from '../lib/map-discogs';
 
 /** Enrich a single release from the Discogs API. Throws to let BullMQ retry. */
@@ -39,6 +39,22 @@ export async function processEnrich(releaseId: string): Promise<void> {
     // Lyrics run on their own queue so scraping never blocks enrichment.
     if (genius.hasAuth()) {
       await lyricsQueue.add('lyrics', { releaseId }).catch(() => undefined);
+    }
+    // Artist origins (MusicBrainz) — only billed artists not yet resolved.
+    const pendingArtists = await prisma.artist.findMany({
+      where: { originStatus: 'PENDING', releases: { some: { releaseId } } },
+      select: { id: true },
+    });
+    if (pendingArtists.length > 0) {
+      await artistOriginQueue
+        .addBulk(
+          pendingArtists.map((a) => ({
+            name: 'artist-origin',
+            data: { artistId: a.id },
+            opts: { jobId: artistOriginJobId(a.id) },
+          })),
+        )
+        .catch(() => undefined);
     }
   } catch (e) {
     await prisma.release.update({

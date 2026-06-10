@@ -25,6 +25,7 @@ export default function SearchPage() {
       genre: params.get('genre') || undefined,
       style: params.get('style') || undefined,
       country: params.get('country') || undefined,
+      origin: params.get('origin') || undefined,
       label: params.get('label') || undefined,
       tag: params.get('tag') || undefined,
       decade: params.get('decade') ? Number(params.get('decade')) : undefined,
@@ -77,6 +78,13 @@ export default function SearchPage() {
           <div className="chip chip-active w-full justify-between">
             Artiste sélectionné
             <button onClick={() => set('artistId', undefined)}>✕</button>
+          </div>
+        )}
+
+        {filters.origin && (
+          <div className="chip chip-active w-full justify-between">
+            Artistes originaires de : {filters.origin}
+            <button onClick={() => set('origin', undefined)}>✕</button>
           </div>
         )}
 

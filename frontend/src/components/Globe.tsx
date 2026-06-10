@@ -18,7 +18,7 @@ let landCache: Poly[] | null = null;
 
 interface Props {
   origins: Origin[];
-  onSelect: (name: string) => void;
+  onSelect: (origin: Origin) => void;
 }
 
 export function Globe({ origins, onSelect }: Props) {
@@ -97,22 +97,29 @@ export function Globe({ origins, onSelect }: Props) {
       ctx.rect(0, 0, size, size);
       ctx.clip();
 
-      // Ocean
-      const ocean = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.35, R * 0.1, cx, cy, R);
-      ocean.addColorStop(0, '#2c4a55');
-      ocean.addColorStop(0.6, '#1b2e36');
-      ocean.addColorStop(1, '#0c1417');
+      // Ocean — aged-paper parchment, like the rest of the app, resting on a
+      // soft shadow so the sphere reads as an object lying on the page.
+      ctx.save();
+      ctx.shadowColor = 'rgba(33, 27, 20, 0.35)';
+      ctx.shadowBlur = R * 0.1;
+      ctx.shadowOffsetY = R * 0.045;
+      const ocean = ctx.createRadialGradient(cx - R * 0.35, cy - R * 0.4, R * 0.1, cx, cy, R);
+      ocean.addColorStop(0, '#f7f1e1');
+      ocean.addColorStop(0.55, '#eddfc1');
+      ocean.addColorStop(0.85, '#dfcca4');
+      ocean.addColorStop(1, '#cdb586');
       ctx.beginPath();
       ctx.arc(cx, cy, R, 0, Math.PI * 2);
       ctx.fillStyle = ocean;
       ctx.fill();
+      ctx.restore();
 
       // Land — Sutherland-Hodgman clip each ring against the z>=0 half-space.
       const land = landRef.current;
       if (land) {
-        ctx.fillStyle = '#6b7f5a';
-        ctx.strokeStyle = 'rgba(250,245,234,0.18)';
-        ctx.lineWidth = 0.4;
+        ctx.fillStyle = '#c3a672';
+        ctx.strokeStyle = 'rgba(74, 63, 51, 0.45)';
+        ctx.lineWidth = 0.5;
         for (const poly of land) {
           for (const ring of poly) {
             const pts = ring.map((p) => rotated(p[1], p[0]));
@@ -144,8 +151,8 @@ export function Globe({ origins, onSelect }: Props) {
         }
       }
 
-      // Graticule
-      ctx.strokeStyle = 'rgba(250,245,234,0.07)';
+      // Graticule — faint sepia ink lines, old-chart style.
+      ctx.strokeStyle = 'rgba(74, 63, 51, 0.16)';
       ctx.lineWidth = 0.5;
       for (let lng = -180; lng < 180; lng += 30) {
         ctx.beginPath();
@@ -160,6 +167,29 @@ export function Globe({ origins, onSelect }: Props) {
         ctx.stroke();
       }
 
+      // Limb shading: darken the sphere edge for depth (before the markers
+      // so the points stay vivid).
+      const limb = ctx.createRadialGradient(cx - R * 0.25, cy - R * 0.3, R * 0.45, cx, cy, R);
+      limb.addColorStop(0, 'rgba(33, 27, 20, 0)');
+      limb.addColorStop(0.82, 'rgba(33, 27, 20, 0.03)');
+      limb.addColorStop(1, 'rgba(33, 27, 20, 0.22)');
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.fillStyle = limb;
+      ctx.fill();
+
+      // Brass meridian rings, like a vintage desk globe.
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(199, 154, 62, 0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, R + 5, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(33, 27, 20, 0.25)';
+      ctx.lineWidth = 0.75;
+      ctx.stroke();
+
       // Origin points
       const maxCount = origins.reduce((m, o) => Math.max(m, o.count), 1);
       for (const o of origins) {
@@ -169,15 +199,39 @@ export function Globe({ origins, onSelect }: Props) {
         const active = hover.current === o.code;
         ctx.beginPath();
         ctx.arc(sx(v), sy(v), r + 4, 0, Math.PI * 2);
-        ctx.fillStyle = active ? 'rgba(184,69,31,0.4)' : 'rgba(184,69,31,0.2)';
+        ctx.fillStyle = active ? 'rgba(184,69,31,0.35)' : 'rgba(184,69,31,0.16)';
         ctx.fill();
         ctx.beginPath();
         ctx.arc(sx(v), sy(v), r, 0, Math.PI * 2);
         ctx.fillStyle = active ? '#d2683f' : '#b8451f';
         ctx.fill();
         ctx.lineWidth = 1;
-        ctx.strokeStyle = 'rgba(250,245,234,0.7)';
+        ctx.strokeStyle = 'rgba(250,245,234,0.85)';
         ctx.stroke();
+      }
+
+      // Hover label — small parchment plate above the marker.
+      const hovered = hover.current ? origins.find((o) => o.code === hover.current) : null;
+      if (hovered) {
+        const v = rotated(hovered.lat, hovered.lng);
+        if (v.z >= 0) {
+          const text = `${hovered.name} · ${hovered.count}`;
+          ctx.font = '600 12px Inter, system-ui, sans-serif';
+          const w = ctx.measureText(text).width + 16;
+          const h = 22;
+          const x = Math.max(4, Math.min(size - w - 4, sx(v) - w / 2));
+          const y = Math.max(4, sy(v) - 34);
+          ctx.beginPath();
+          ctx.roundRect(x, y, w, h, 6);
+          ctx.fillStyle = 'rgba(250, 245, 234, 0.95)';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(33, 27, 20, 0.25)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          ctx.fillStyle = '#211b14';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, x + 8, y + h / 2 + 0.5);
+        }
       }
 
       ctx.restore();
@@ -273,7 +327,7 @@ export function Globe({ origins, onSelect }: Props) {
       // Treat a tap (no drag) as a selection.
       if (down.current && !down.current.moved) {
         const o = hit(e.clientX, e.clientY);
-        if (o) onSelect(o.name);
+        if (o) onSelect(o);
       }
     }
     down.current = null;

@@ -11,6 +11,7 @@ export interface ReleaseFilters {
   style?: string;
   label?: string;
   country?: string;
+  origin?: string; // ISO code — artist origin country
   tag?: string;
   storageLocationId?: string;
   year?: number;
@@ -108,10 +109,11 @@ export function useStats() {
   });
 }
 
-export function useOrigins() {
+export function useOrigins(mode: T.OriginMode = 'artists') {
   return useQuery({
-    queryKey: ['origins'],
-    queryFn: async () => (await api.get<{ origins: T.Origin[] }>('/stats/origins')).data.origins,
+    queryKey: ['origins', mode],
+    queryFn: async () =>
+      (await api.get<T.OriginsResponse>('/stats/origins', { params: { mode } })).data,
   });
 }
 

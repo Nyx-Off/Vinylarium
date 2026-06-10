@@ -70,6 +70,14 @@ enum ImageType {
   OTHER
 }
 
+/// Progress of the MusicBrainz artist-origin lookup.
+enum ArtistOriginStatus {
+  PENDING // never looked up
+  FOUND // resolved to a country
+  NOT_FOUND // MusicBrainz answered but no confident match / no country — final
+  FAILED // lookup errored after retries — retried on next worker boot
+}
+
 enum ExternalSource {
   DISCOGS
   MUSICBRAINZ
@@ -213,7 +221,13 @@ model Artist {
   profile         String? @db.Text
   imagePath       String?
   discogsUri      String?
-  originCountryId String? // resolved via MusicBrainz (future)
+
+  // Where the artist/band comes from — resolved via MusicBrainz (not the
+  // vinyl's pressing country, which lives on Release.country).
+  mbid            String? // MusicBrainz artist id of the matched entity
+  originCountryId String?
+  originStatus    ArtistOriginStatus @default(PENDING)
+  originCheckedAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -226,6 +240,7 @@ model Artist {
 
   @@index([name])
   @@index([sortName])
+  @@index([originStatus])
   @@map("artists")
 }
 

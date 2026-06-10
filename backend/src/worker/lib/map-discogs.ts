@@ -173,22 +173,6 @@ export async function applyDiscogsRelease(releaseId: string, data: any): Promise
     });
   }
 
-  // Images (metadata only; bytes are downloaded for the cover below)
-  const images: any[] = Array.isArray(data.images) ? data.images : [];
-  let ii = 0;
-  for (const img of images) {
-    await prisma.image.create({
-      data: {
-        releaseId,
-        type: img.type === 'primary' ? ImageType.PRIMARY : ImageType.SECONDARY,
-        sourceUrl: img.uri || null,
-        width: typeof img.width === 'number' ? img.width : null,
-        height: typeof img.height === 'number' ? img.height : null,
-        position: ii++,
-      },
-    });
-  }
-
   // Identifiers (barcode, matrix/runout, ...)
   for (const id of Array.isArray(data.identifiers) ? data.identifiers : []) {
     if (!id?.type || id?.value == null) continue;
@@ -204,7 +188,7 @@ export async function applyDiscogsRelease(releaseId: string, data: any): Promise
     });
   }
 
-  await downloadCovers(releaseId, data);
+  await applyImages(releaseId, data);
 }
 
 function imageExt(url: string): string {
@@ -212,35 +196,67 @@ function imageExt(url: string): string {
 }
 
 /**
- * Download the front cover and (when available) a back cover. Discogs serves
- * images from a CDN that rejects browser hotlinks, so the bytes must be
- * fetched server-side and stored locally for the UI to display them.
+ * Download EVERY Discogs image and keep its semantics. Discogs serves images
+ * from a CDN that rejects browser hotlinks, so bytes must be fetched
+ * server-side and stored locally for the UI to display them.
+ *
+ * Discogs only distinguishes "primary" vs "secondary"; by convention the
+ * primary is the front sleeve and the next image is the verso. We persist
+ * that as PRIMARY / BACK / SECONDARY so the UI can label the gallery, and we
+ * mirror front/back onto Release.coverPath/backCoverPath for the grids.
  */
-async function downloadCovers(releaseId: string, data: any): Promise<void> {
-  const images: any[] = Array.isArray(data.images) ? data.images : [];
+async function applyImages(releaseId: string, data: any): Promise<void> {
+  const images: any[] = (Array.isArray(data.images) ? data.images : []).filter((i: any) => i?.uri);
+  const primaryIdx = Math.max(0, images.findIndex((i) => i.type === 'primary'));
+  const backIdx = images.length > 1 ? (primaryIdx === 0 ? 1 : 0) : -1;
 
-  // Front: the "primary" image, falling back to the first image / thumbnail.
-  const primary = images.find((i) => i.type === 'primary') ?? images[0];
-  const frontUrl: string | undefined = primary?.uri || data.thumb;
-  if (frontUrl) {
-    const rel = await downloadToStorage(
-      frontUrl,
-      'covers',
-      `${releaseId}.${imageExt(frontUrl)}`,
-      imageHeaders(),
-    );
-    if (rel) await prisma.release.update({ where: { id: releaseId }, data: { coverPath: rel } });
+  let coverPath: string | null = null;
+  let backPath: string | null = null;
+
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i];
+    const kind = i === primaryIdx ? ImageType.PRIMARY : i === backIdx ? ImageType.BACK : ImageType.SECONDARY;
+    const ext = imageExt(img.uri);
+    const filename =
+      kind === ImageType.PRIMARY
+        ? `${releaseId}.${ext}`
+        : kind === ImageType.BACK
+          ? `${releaseId}-back.${ext}`
+          : `${releaseId}-img-${i}.${ext}`;
+    const rel = await downloadToStorage(img.uri, 'covers', filename, imageHeaders());
+    await prisma.image.create({
+      data: {
+        releaseId,
+        type: kind,
+        localPath: rel,
+        sourceUrl: img.uri,
+        width: typeof img.width === 'number' ? img.width : null,
+        height: typeof img.height === 'number' ? img.height : null,
+        position: i,
+      },
+    });
+    if (kind === ImageType.PRIMARY && rel) coverPath = rel;
+    if (kind === ImageType.BACK && rel) backPath = rel;
   }
 
-  // Back: the first image that isn't the chosen front (usually the verso).
-  const back = images.find((i) => i !== primary && i?.uri);
-  if (back?.uri) {
-    const rel = await downloadToStorage(
-      back.uri,
+  // No usable image array (e.g. anonymous Discogs API): fall back to the
+  // CSV/search thumbnail for the front cover.
+  if (!coverPath && data.thumb) {
+    coverPath = await downloadToStorage(
+      data.thumb,
       'covers',
-      `${releaseId}-back.${imageExt(back.uri)}`,
+      `${releaseId}.${imageExt(data.thumb)}`,
       imageHeaders(),
     );
-    if (rel) await prisma.release.update({ where: { id: releaseId }, data: { backCoverPath: rel } });
   }
+
+  // Only overwrite what we managed to download — keeps manual uploads when
+  // Discogs has nothing better.
+  await prisma.release.update({
+    where: { id: releaseId },
+    data: {
+      ...(coverPath ? { coverPath } : {}),
+      ...(backPath ? { backCoverPath: backPath } : {}),
+    },
+  });
 }
