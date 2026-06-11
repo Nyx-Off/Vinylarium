@@ -4,13 +4,13 @@ import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { Me } from '../api/types';
 
+// L'import Discogs et la sauvegarde vivent dans Paramètres (profil), pas ici.
 const NAV = [
   { to: '/library', label: 'Bibliothèque' },
   { to: '/search', label: 'Recherche' },
   { to: '/storage', label: 'Rangement' },
   { to: '/map', label: 'Carte' },
   { to: '/timeline', label: 'Frise' },
-  { to: '/import', label: 'Import' },
   { to: '/add', label: 'Ajouter' },
 ];
 
@@ -25,7 +25,6 @@ const TABS = [
 ];
 const MORE = [
   { to: '/storage', label: 'Rangement', icon: '📦' },
-  { to: '/import', label: 'Import Discogs', icon: '📥' },
   { to: '/add', label: 'Ajouter un disque', icon: '➕' },
   { to: '/settings', label: 'Paramètres', icon: '⚙️' },
 ];

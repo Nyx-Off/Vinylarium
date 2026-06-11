@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, errorMessage } from '../api/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useStats, useIntegrations, useReenrichStatus } from '../api/hooks';
@@ -29,6 +30,59 @@ export default function SettingsPage() {
   const [password, setPassword] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const backupRef = useRef<HTMLInputElement>(null);
+  const [backupMsg, setBackupMsg] = useState('');
+  const [backupBusy, setBackupBusy] = useState(false);
+
+  async function exportBackup() {
+    setBackupBusy(true);
+    setBackupMsg('');
+    try {
+      const { data } = await api.get('/backup/export', { responseType: 'blob' });
+      const url = URL.createObjectURL(data as Blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `vinylarium-sauvegarde-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setBackupMsg('Sauvegarde téléchargée.');
+    } catch (e) {
+      setBackupMsg(errorMessage(e));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function importBackup() {
+    const file = backupRef.current?.files?.[0];
+    if (!file) {
+      setBackupMsg('Choisissez d’abord un fichier de sauvegarde (.json).');
+      return;
+    }
+    setBackupBusy(true);
+    setBackupMsg('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data } = await api.post<{
+        total: number;
+        created: number;
+        updated: number;
+        enrichQueued: number;
+      }>('/backup/import', fd);
+      setBackupMsg(
+        `Sauvegarde restaurée : ${data.created} disque(s) recréé(s), ${data.updated} mis à jour` +
+          (data.enrichQueued ? `, ${data.enrichQueued} enrichissement(s) Discogs lancé(s).` : '.'),
+      );
+      if (backupRef.current) backupRef.current.value = '';
+      qc.invalidateQueries();
+    } catch (e) {
+      setBackupMsg(errorMessage(e));
+    } finally {
+      setBackupBusy(false);
+    }
+  }
 
   async function saveProfile() {
     if (!user) return;
@@ -136,6 +190,47 @@ export default function SettingsPage() {
                   : 'À jour'}
             </span>
           )}
+        </div>
+      </section>
+
+      <section className="card space-y-3 p-6">
+        <h2 className="font-display text-xl font-bold text-ink">Import & sauvegarde</h2>
+        <div className="rounded-xl bg-ink/5 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-semibold">Import Discogs</p>
+              <p className="text-xs text-mocha">
+                Déposez l'export CSV de votre collection Discogs — création + enrichissement.
+              </p>
+            </div>
+            <Link to="/import" className="btn-primary">
+              📥 Ouvrir l'import
+            </Link>
+          </div>
+        </div>
+        <div className="rounded-xl bg-ink/5 px-4 py-3">
+          <p className="font-semibold">Sauvegarde de la collection</p>
+          <p className="mb-3 text-xs text-mocha">
+            Exporte un fichier JSON avec vos disques et tout ce qui vous appartient (notes, tags,
+            rangement, paroles et anecdotes manuelles). La restauration recrée les disques
+            manquants (l'enrichissement Discogs se relance tout seul) et remet vos données — sans
+            doublon. À ne pas confondre avec l'import Discogs ci-dessus.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={exportBackup} disabled={backupBusy} className="btn-outline">
+              ⬇ Exporter la sauvegarde
+            </button>
+            <input
+              ref={backupRef}
+              type="file"
+              accept="application/json,.json"
+              className="max-w-[230px] text-sm"
+            />
+            <button onClick={importBackup} disabled={backupBusy} className="btn-primary">
+              {backupBusy ? '…' : '⬆ Restaurer'}
+            </button>
+          </div>
+          {backupMsg && <p className="mt-2 text-sm text-accent">{backupMsg}</p>}
         </div>
       </section>
 

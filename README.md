@@ -37,8 +37,9 @@ profils utilisateurs.
 - **Recherche croisée** — filtrez par artiste, instrument (« qui joue de la basse »), genre, style, label, pays, décennie, version, tag, emplacement…
 - **Rangement physique** — décrivez meubles, étagères, bacs et positions ; retrouvez et filtrez vos disques par emplacement.
 - **Ajout manuel** — pour les disques absents de Discogs.
-- **Profils utilisateurs** — façon Plex : sélection à l'accueil, mot de passe optionnel, avatars ; **état des API** et **ré-enrichissement global** (start/stop) dans les paramètres.
-- **Sauvegarde / restauration** — scripts fournis pour la base et les médias.
+- **Profils utilisateurs** — façon Plex : sélection à l'accueil, mot de passe optionnel, avatars ; **état des API**, **ré-enrichissement global** (start/stop) et **import Discogs** regroupés dans les paramètres.
+- **Sauvegarde de la collection (export / restauration)** — depuis les paramètres : export d'un fichier JSON contenant les disques et tout ce qui vous appartient (notes, étoiles, tags, rangement, paroles et anecdotes manuelles) ; la restauration recrée les disques manquants (l'enrichissement Discogs se relance automatiquement) et remet vos données, sans doublon. Distinct de l'import Discogs.
+- **Sauvegarde / restauration serveur** — scripts fournis pour la base et les médias.
 
 ## 🏗️ Architecture
 
