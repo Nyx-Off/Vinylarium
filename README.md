@@ -40,6 +40,7 @@ profils utilisateurs.
 - **Profils utilisateurs** — façon Plex : sélection à l'accueil, mot de passe optionnel, avatars ; **état des API**, **ré-enrichissement global** (start/stop) et **import Discogs** regroupés dans les paramètres.
 - **Sauvegarde de la collection (export / restauration)** — depuis les paramètres : export d'un fichier JSON contenant les disques et tout ce qui vous appartient (notes, étoiles, tags, rangement, paroles et anecdotes manuelles) ; la restauration recrée les disques manquants (l'enrichissement Discogs se relance automatiquement) et remet vos données, sans doublon. Distinct de l'import Discogs.
 - **Sauvegarde / restauration serveur** — scripts fournis pour la base et les médias.
+- **Mise à jour intégrée** — depuis les paramètres : version installée, **vérification quotidienne automatique** contre GitHub (+ bouton « Vérifier maintenant », liste des commits en retard), et bouton **« Mettre à jour »** (admin) qui fait `git pull` + rebuild + redémarrage via un conteneur *updater* dédié, avec progression en direct.
 
 ## 🏗️ Architecture
 
@@ -112,6 +113,10 @@ Au premier lancement, l'application vous invite à **créer le premier compte**.
 | `MUSICBRAINZ_USER_AGENT` | User-Agent MusicBrainz (origine des artistes ; lecture sans OAuth ni jeton) |
 
 ## 🔄 Mise à jour
+
+Le plus simple : **Paramètres → Mise à jour de l'application** dans l'interface (vérification
+quotidienne automatique, bouton « Mettre à jour » pour les admins — le conteneur `updater` fait
+`git pull` + rebuild + redémarrage tout seul). En ligne de commande :
 
 ```bash
 bash scripts/update.sh

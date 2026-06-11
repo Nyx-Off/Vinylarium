@@ -17,6 +17,7 @@ import { searchRoutes } from './modules/search/routes';
 import { storageRoutes } from './modules/storage/routes';
 import { statsRoutes } from './modules/stats/routes';
 import { backupRoutes } from './modules/backup/routes';
+import { systemRoutes } from './modules/system/routes';
 
 export async function buildApp() {
   const app = Fastify({
@@ -79,6 +80,7 @@ export async function buildApp() {
       await api.register(storageRoutes, { prefix: '/storage' });
       await api.register(statsRoutes, { prefix: '/stats' });
       await api.register(backupRoutes, { prefix: '/backup' });
+      await api.register(systemRoutes, { prefix: '/system' });
     },
     { prefix: '/api' },
   );

@@ -53,8 +53,14 @@ services:
       STORAGE_DIR: /data
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "3000"
+      UPDATE_REPO: ${UPDATE_REPO:-Nyx-Off/Vinylarium}
+      UPDATE_BRANCH: ${UPDATE_BRANCH:-main}
+      GIT_DIR_PATH: /repo/.git
     volumes:
       - storage:/data
+      # Read-only view of the host checkout's .git so the API knows which
+      # commit is deployed (update check against GitHub).
+      - ./.git:/repo/.git:ro
     depends_on:
       db:
         condition: service_healthy
@@ -107,6 +113,20 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    networks: [vinylarium]
+
+  # ── Self-update sidecar: watches /data/update/request.json (dropped by the
+  #    API) and runs git pull + compose build/up on the host checkout. ───────
+  updater:
+    build:
+      context: ./updater
+    image: vinylarium-updater:local
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/repo
+      - storage:/data
+    working_dir: /repo
     networks: [vinylarium]
 
 volumes:
