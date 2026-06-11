@@ -48,11 +48,13 @@ export const enrichQueue = new Queue<EnrichJobData, void, string>(QUEUE_ENRICH, 
 });
 
 // Lyrics scraping is best-effort and slow; keep it off the enrichment path.
+// Genius rate-limits sustained traffic with long 429 windows (an hour or
+// more), so retries must stretch far: 5 → 10 → 20 → … minutes, ~10h overall.
 export const lyricsQueue = new Queue<LyricsJobData, void, string>(QUEUE_LYRICS, {
   connection: bullConnection,
   defaultJobOptions: {
-    attempts: 2,
-    backoff: { type: 'exponential', delay: 10_000 },
+    attempts: 8,
+    backoff: { type: 'exponential', delay: 300_000 },
     removeOnComplete: 500,
     removeOnFail: 1000,
   },
