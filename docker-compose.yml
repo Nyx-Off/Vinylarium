@@ -82,6 +82,7 @@ services:
       DISCOGS_USER_AGENT: ${DISCOGS_USER_AGENT:-Vinylarium/0.1}
       MUSICBRAINZ_USER_AGENT: ${MUSICBRAINZ_USER_AGENT:-Vinylarium/0.1}
       GENIUS_ACCESS_TOKEN: ${GENIUS_ACCESS_TOKEN:-}
+      ANECDOTE_LANG: ${ANECDOTE_LANG:-fr}
       STORAGE_DIR: /data
       NODE_ENV: ${NODE_ENV:-production}
     volumes:
