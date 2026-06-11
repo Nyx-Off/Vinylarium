@@ -13,6 +13,19 @@ export interface GeniusHit {
   artist: string;
 }
 
+/**
+ * Genius rate-limits sustained traffic with HTTP 429. Unlike an ordinary miss
+ * (which means "this song has no page"), a 429 means every further call is
+ * pointless — callers must abort and let BullMQ retry the job later instead of
+ * silently storing nothing.
+ */
+export class GeniusRateLimitError extends Error {
+  constructor() {
+    super('Genius rate limit (HTTP 429)');
+    this.name = 'GeniusRateLimitError';
+  }
+}
+
 function hasAuth(): boolean {
   return Boolean(config.genius.accessToken);
 }
@@ -49,6 +62,7 @@ async function search(artist: string, title: string): Promise<GeniusHit | null> 
     { headers: { Authorization: `Bearer ${config.genius.accessToken}` } },
     12_000,
   );
+  if (res.status === 429) throw new GeniusRateLimitError();
   if (!res.ok) return null;
   const json: any = await res.json();
   const hits: any[] = (json?.response?.hits ?? []).filter(
@@ -145,6 +159,7 @@ function stripExcludedDivs(inner: string): string {
 /** Scrape the lyrics text from a Genius song page. */
 async function scrape(url: string): Promise<string | null> {
   const res = await fetchWithTimeout(url, { headers: { 'User-Agent': config.discogs.userAgent } }, 15_000);
+  if (res.status === 429) throw new GeniusRateLimitError();
   if (!res.ok) return null;
   const html = await res.text();
 
@@ -175,6 +190,7 @@ async function apiGet(path: string): Promise<any | null> {
     { headers: { Authorization: `Bearer ${config.genius.accessToken}` } },
     12_000,
   );
+  if (res.status === 429) throw new GeniusRateLimitError();
   if (!res.ok) return null;
   return res.json();
 }
