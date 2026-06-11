@@ -37,7 +37,12 @@ export default function LibraryPage() {
     }
   }
 
-  const { data, isLoading, isFetching } = useReleases({ q: q || undefined, sort, page, pageSize: 60 });
+  // Crate view shows the whole collection as one floor of bins — no paging.
+  const { data, isLoading, isFetching } = useReleases(
+    view === 'crate'
+      ? { q: q || undefined, sort, page: 1, pageSize: 1000 }
+      : { q: q || undefined, sort, page, pageSize: 60 },
+  );
 
   const items = data?.items ?? [];
 
@@ -134,10 +139,10 @@ export default function LibraryPage() {
           ))}
         </div>
       ) : (
-        <CrateBrowser items={items} />
+        <CrateBrowser items={items} sortHint={sort} />
       )}
 
-      {data && data.pageCount > 1 && (
+      {view !== 'crate' && data && data.pageCount > 1 && (
         <div className="mt-8 flex items-center justify-center gap-4">
           <button className="btn-outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
             ← Précédent
