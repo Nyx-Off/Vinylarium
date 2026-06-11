@@ -18,6 +18,7 @@ export function Cover({ src, title, artist, className }: Props) {
         src={src}
         alt={title || ''}
         loading="lazy"
+        draggable={false}
         onError={() => setErrored(true)}
         className={clsx('h-full w-full object-cover', className)}
       />
