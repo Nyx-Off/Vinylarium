@@ -109,6 +109,19 @@
   .animate-land {
     animation: land-pop 360ms ease-out;
   }
+  /* Timeline: covers gently bobbing around their year. */
+  @keyframes tl-float {
+    from {
+      transform: translateY(-5px);
+    }
+    to {
+      transform: translateY(5px);
+    }
+  }
+  .animate-tl-float {
+    animation: tl-float 5s ease-in-out infinite alternate;
+  }
+
   @keyframes fade-up {
     from {
       opacity: 0;
