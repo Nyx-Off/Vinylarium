@@ -23,7 +23,7 @@ import { processAlbumAnecdote } from './worker/jobs/anecdote';
 import { processArtistOrigin } from './worker/jobs/artist-origin';
 import { processArtistRelations } from './worker/jobs/artist-relations';
 import { discogs } from './worker/clients/discogs';
-import { genius } from './worker/clients/genius';
+import { genius, GeniusRateLimitError } from './worker/clients/genius';
 
 /**
  * If the worker crashed (or was killed) mid-enrichment, releases are left
@@ -110,13 +110,26 @@ async function main() {
 
   // 'lyrics' = full pass (album anecdote + per-track lyrics);
   // 'anecdote' = Genius album description only (cheap backfills).
-  const lyricsWorker = new Worker<LyricsJobData, void, string>(
+  // Genius has a ~10k requests/day quota; when it 429s, pause the WHOLE queue
+  // and put the job back untouched (Worker.RateLimitError does not consume a
+  // retry attempt) — every 15 min one cheap probe rediscovers whether the
+  // quota window has reset.
+  const lyricsWorker: Worker<LyricsJobData, void, string> = new Worker<LyricsJobData, void, string>(
     QUEUE_LYRICS,
     async (job) => {
-      if (job.name === 'anecdote') await processAlbumAnecdote(job.data.releaseId);
-      else await processLyrics(job.data.releaseId);
+      try {
+        if (job.name === 'anecdote') await processAlbumAnecdote(job.data.releaseId);
+        else await processLyrics(job.data.releaseId);
+      } catch (e) {
+        if (e instanceof GeniusRateLimitError) {
+          console.warn(`[lyrics] Genius 429 — queue paused 15 min (job ${job.id})`);
+          await lyricsWorker.rateLimit(15 * 60_000);
+          throw Worker.RateLimitError();
+        }
+        throw e;
+      }
     },
-    { connection: bullConnection, concurrency: 1 },
+    { connection: bullConnection, concurrency: 1, limiter: { max: 30, duration: 60_000 } },
   );
 
   // MusicBrainz allows 1 request/second — every MB call (origin search or
