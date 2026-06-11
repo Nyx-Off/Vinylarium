@@ -1,5 +1,6 @@
 import { prisma } from '../../db/prisma';
 import { genius } from '../clients/genius';
+import { processAlbumAnecdote } from './anecdote';
 
 const MAX_TRACKS = 40;
 const GAP_MS = 350; // be polite between Genius requests
@@ -19,6 +20,9 @@ export async function processLyrics(releaseId: string): Promise<void> {
     include: { tracks: { orderBy: { trackIndex: 'asc' } } },
   });
   if (!release) return;
+
+  // Album description ("anecdote") rides along with the lyrics pass.
+  await processAlbumAnecdote(releaseId).catch(() => undefined);
 
   const tracks = release.tracks
     .filter((t) => t.type === 'track' && t.title.trim().length > 0)

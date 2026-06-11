@@ -15,17 +15,20 @@ function CreditGroup({ title, credits }: { title: string; credits: Credit[] }) {
     <div className="mb-4">
       <h3 className="label">{title}</h3>
       <div className="flex flex-wrap gap-1.5">
-        {credits.map((c) => (
-          <Link
-            key={c.id}
-            to={`/artist/${c.artist.id}`}
-            className="chip hover:bg-accent hover:text-cream"
-            title={c.role + (c.tracks ? ` (${c.tracks})` : '')}
-          >
-            {c.artist.name}
-            <span className="opacity-60">· {c.role}</span>
-          </Link>
-        ))}
+        {credits.map((c) => {
+          const role = c.detail ? `${c.role} (${c.detail})` : c.role;
+          return (
+            <Link
+              key={c.id}
+              to={`/artist/${c.artist.id}`}
+              className="chip hover:bg-accent hover:text-cream"
+              title={role + (c.tracks ? ` (${c.tracks})` : '')}
+            >
+              {c.artist.name}
+              <span className="opacity-60">· {role}</span>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
@@ -149,6 +152,21 @@ export default function ReleaseDetailPage() {
   }
   const frontIdx = Math.max(0, gallery.findIndex((g) => g.label === 'Recto'));
   const zoomed = zoom != null ? gallery[zoom] : null;
+
+  // Every instrument played on this record (Discogs credits), with players.
+  // The detail qualifier is the exact model ("Synthesizer [Yamaha DX7]"), so
+  // it gets its own chip; the search link still targets the base role.
+  const instruments = new Map<string, { role: string; players: string[] }>();
+  for (const c of r.credits) {
+    if (c.category !== 'INSTRUMENT') continue;
+    const label = c.detail ? `${c.role} · ${c.detail}` : c.role;
+    const entry = instruments.get(label) ?? { role: c.role, players: [] };
+    if (!entry.players.includes(c.artist.name)) entry.players.push(c.artist.name);
+    instruments.set(label, entry);
+  }
+  const instrumentList = [...instruments.entries()].sort(
+    (a, b) => b[1].players.length - a[1].players.length || a[0].localeCompare(b[0]),
+  );
 
   return (
     <div>
@@ -282,6 +300,24 @@ export default function ReleaseDetailPage() {
                 ))}
               </div>
             )}
+            {instrumentList.length > 0 && (
+              <div className="mt-4">
+                <span className="label">Instruments sur ce disque</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {instrumentList.map(([label, { role, players }]) => (
+                    <Link
+                      key={label}
+                      to={`/search?role=${encodeURIComponent(role)}`}
+                      className="chip hover:bg-accent hover:text-cream"
+                      title={players.join(', ')}
+                    >
+                      ♪ {label}
+                      {players.length > 1 && <span className="opacity-60">×{players.length}</span>}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {editing && (
@@ -381,6 +417,43 @@ export default function ReleaseDetailPage() {
             </Section>
           )}
 
+          {/* Line-up of each billed group when the record came out */}
+          {r.lineup.length > 0 && (
+            <Section title={r.year ? `Formation en ${r.year}` : 'Formation'}>
+              {r.lineup.map((g) => (
+                <div key={g.artistId} className="mb-3 last:mb-0">
+                  {r.lineup.length > 1 && <h3 className="label">{g.artistName}</h3>}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {g.members.map((m, idx) => {
+                      const instr = m.attributes.filter((a) => a !== 'original');
+                      const name = m.artistId ? (
+                        <Link
+                          to={`/artist/${m.artistId}`}
+                          className="font-semibold hover:text-accent hover:underline"
+                        >
+                          {m.name}
+                        </Link>
+                      ) : (
+                        <span className="font-semibold">{m.name}</span>
+                      );
+                      return (
+                        <div key={idx} className="rounded-lg bg-ink/5 px-3 py-2 text-sm">
+                          {name}
+                          {instr.length > 0 && (
+                            <span className="text-mocha"> — {instr.join(', ')}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              <p className="mt-3 text-xs text-mocha/60">
+                Membres actifs à la sortie du disque, d'après MusicBrainz.
+              </p>
+            </Section>
+          )}
+
           {/* Credits */}
           {r.credits.length > 0 && (
             <Section title="Crédits">
@@ -422,9 +495,19 @@ export default function ReleaseDetailPage() {
           {r.anecdotes.length > 0 && (
             <Section title="Anecdotes">
               {r.anecdotes.map((a) => (
-                <div key={a.id} className="mb-3">
+                <div key={a.id} className="mb-4 last:mb-0">
                   {a.title && <h4 className="font-semibold">{a.title}</h4>}
                   <p className="whitespace-pre-wrap text-sm text-mocha">{a.body}</p>
+                  {a.sourceUrl && (
+                    <a
+                      href={a.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 inline-block text-xs text-accent hover:underline"
+                    >
+                      {a.source === 'GENIUS' ? 'Genius' : 'Source'} ↗
+                    </a>
+                  )}
                 </div>
               ))}
             </Section>
