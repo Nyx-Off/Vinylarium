@@ -8,6 +8,7 @@ const NAV = [
   { to: '/search', label: 'Recherche' },
   { to: '/storage', label: 'Rangement' },
   { to: '/map', label: 'Carte' },
+  { to: '/timeline', label: 'Frise' },
   { to: '/import', label: 'Import' },
   { to: '/add', label: 'Ajouter' },
 ];
