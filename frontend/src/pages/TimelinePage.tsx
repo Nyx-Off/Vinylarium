@@ -5,56 +5,29 @@ import { TimelineRelease } from '../api/types';
 import { Cover } from '../components/Cover';
 import { Spinner } from '../components/Spinner';
 
-const SLOT = 96; // vertical room per floating level
-const LEVELS = 3; // levels of covers on EACH side of the axis
-const SEG_PAD = 10; // inner padding of a year segment
-const EMPTY_W = 22; // width of a year without releases
-const BREAK_W = 72; // collapsed long gap ("···")
+const HALF = 320; // half the strip height — the path wanders inside ±amp
+const GAP = 64; // breathing room between two year clouds
+const BREAK_EXTRA = 80; // extra room when a long silent gap is collapsed
 
-type Segment =
-  | { kind: 'year'; year: number; releases: TimelineRelease[]; x: number; width: number }
-  | { kind: 'empty'; year: number; x: number; width: number }
-  | { kind: 'break'; x: number; width: number };
+type PlacedCover = {
+  release: TimelineRelease;
+  px: number; // offset of the cover CENTER from the year point
+  py: number;
+  j: Jitter;
+};
 
-/**
- * One segment per year from the oldest to the newest release. Covers float on
- * BOTH sides of the axis (LEVELS each), so a year fits 2×LEVELS covers per
- * column; runs of more than four silent years collapse into a single "···"
- * break so a lone 1958 record doesn't push the seventies off-screen.
- */
-function buildSegments(releases: TimelineRelease[]) {
-  const byYear = new Map<number, TimelineRelease[]>();
-  for (const r of releases) {
-    const bucket = byYear.get(r.year);
-    if (bucket) bucket.push(r);
-    else byYear.set(r.year, [r]);
-  }
-  const years = [...byYear.keys()].sort((a, b) => a - b);
-  const perColumn = LEVELS * 2;
-  const segments: Segment[] = [];
-  let x = 0;
-  for (let i = 0; i < years.length; i++) {
-    const year = years[i];
-    if (i > 0) {
-      const gap = year - years[i - 1] - 1;
-      if (gap > 4) {
-        segments.push({ kind: 'break', x, width: BREAK_W });
-        x += BREAK_W;
-      } else {
-        for (let y = years[i - 1] + 1; y < year; y++) {
-          segments.push({ kind: 'empty', year: y, x, width: EMPTY_W });
-          x += EMPTY_W;
-        }
-      }
-    }
-    const list = byYear.get(year)!;
-    const cols = Math.ceil(list.length / perColumn);
-    const width = cols * SLOT + SEG_PAD * 2;
-    segments.push({ kind: 'year', year, releases: list, x, width });
-    x += width;
-  }
-  return { segments, total: x };
-}
+type YearNode = {
+  year: number;
+  isDecade: boolean;
+  x: number;
+  y: number;
+  rx: number; // horizontal half-extent of the cover cloud (incl. covers)
+  ry: number;
+  covers: PlacedCover[];
+  breakBefore: boolean; // >4 silent years before this node → dashed segment + "···"
+};
+
+type Jitter = ReturnType<typeof jitter>;
 
 /** Deterministic per-release jitter so the cloud doesn't reshuffle on render. */
 function jitter(id: string) {
@@ -66,13 +39,109 @@ function jitter(id: string) {
   h >>>= 0;
   const f = (shift: number, mod: number) => ((h >>> shift) % mod) / (mod - 1); // 0..1
   return {
-    dx: (f(0, 97) - 0.5) * 18, // px
-    dy: (f(7, 89) - 0.5) * 22, // px
-    rot: (f(13, 83) - 0.5) * 12, // degrees
-    size: 64 + f(19, 79) * 24, // px, 64..88
+    da: (f(0, 97) - 0.5) * 0.35, // rad, angular wobble on the ring
+    dr: (f(7, 89) - 0.5) * 0.16, // relative radial wobble
+    rot: (f(13, 83) - 0.5) * 14, // degrees
+    size: 60 + f(19, 79) * 26, // px, 60..86
     dur: 4 + f(23, 73) * 3.5, // s, bobbing speed
     delay: -f(27, 71) * 6, // s, negative = start mid-swing
   };
+}
+
+/** Same FNV-style hash for a year number, as a 0..1 fraction. */
+function yearFrac(year: number, salt: number) {
+  let h = Math.imul(year ^ (salt * 0x9e3779b9), 2654435761) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 16777619) >>> 0;
+  return (h % 1000) / 999;
+}
+
+/**
+ * Scatter a year's covers on elliptical rings around its point. Ring r holds
+ * 6 + 6r covers; rings are wider than tall so even a crowded year stays inside
+ * the strip. Angles are evenly spread per ring, then nudged by each release's
+ * own jitter so nothing looks gridded.
+ */
+function placeCovers(releases: TimelineRelease[], year: number): {
+  covers: PlacedCover[];
+  rx: number;
+  ry: number;
+} {
+  const covers: PlacedCover[] = [];
+  let i = 0;
+  let ring = 0;
+  let rx = 0;
+  let ry = 0;
+  while (i < releases.length) {
+    const cap = 6 + ring * 6;
+    const count = Math.min(cap, releases.length - i);
+    const ringRx = 112 + ring * 84;
+    const ringRy = Math.min(86 + ring * 52, HALF - 100);
+    const offset = yearFrac(year, ring + 1) * Math.PI * 2;
+    for (let k = 0; k < count; k++, i++) {
+      const j = jitter(releases[i].id);
+      const angle = offset + (k / count) * Math.PI * 2 + j.da;
+      const radial = 1 + j.dr;
+      covers.push({
+        release: releases[i],
+        px: Math.cos(angle) * ringRx * radial,
+        py: Math.sin(angle) * ringRy * radial,
+        j,
+      });
+    }
+    rx = ringRx * 1.08;
+    ry = ringRy * 1.08;
+    ring++;
+  }
+  // half-extents including the covers themselves (worst-case size 86 → half 43)
+  return { covers, rx: rx + 46, ry: ry + 46 };
+}
+
+/**
+ * One point per year, oldest to newest. The points are deliberately NOT
+ * aligned: each wanders up or down (deterministically, from the year hash and
+ * a slow sine on its rank) as far as its cover cloud allows. Long silent gaps
+ * (>4 years) collapse into a dashed leg of the path with a "···".
+ */
+function buildNodes(releases: TimelineRelease[]) {
+  const byYear = new Map<number, TimelineRelease[]>();
+  for (const r of releases) {
+    const bucket = byYear.get(r.year);
+    if (bucket) bucket.push(r);
+    else byYear.set(r.year, [r]);
+  }
+  const years = [...byYear.keys()].sort((a, b) => a - b);
+  const nodes: YearNode[] = [];
+  let x = 24;
+  for (let i = 0; i < years.length; i++) {
+    const year = years[i];
+    const { covers, rx, ry } = placeCovers(byYear.get(year)!, year);
+    const gap = i > 0 ? year - years[i - 1] - 1 : 0;
+    const breakBefore = gap > 4;
+    if (i > 0) {
+      x += nodes[i - 1].rx + GAP + Math.min(gap * 10, 50) + (breakBefore ? BREAK_EXTRA : 0) + rx;
+    } else {
+      x += rx;
+    }
+    const amp = Math.max(0, HALF - ry - 14);
+    const wave = Math.sin(i * 1.15 + yearFrac(year, 7) * 1.4) * 0.7 + (yearFrac(year, 3) - 0.5) * 0.9;
+    const y = HALF + Math.max(-1, Math.min(1, wave)) * amp;
+    nodes.push({ year, isDecade: year % 10 === 0, x, y, rx, ry, covers, breakBefore });
+  }
+  const total = nodes.length > 0 ? nodes[nodes.length - 1].x + nodes[nodes.length - 1].rx + 48 : 0;
+  return { nodes, total };
+}
+
+/** Catmull-Rom control points for the leg p1→p2 of the journey. */
+function legPath(nodes: YearNode[], i: number) {
+  const p0 = nodes[i - 1] ?? nodes[i];
+  const p1 = nodes[i];
+  const p2 = nodes[i + 1];
+  const p3 = nodes[i + 2] ?? p2;
+  const c1x = p1.x + (p2.x - p0.x) / 6;
+  const c1y = p1.y + (p2.y - p0.y) / 6;
+  const c2x = p2.x - (p3.x - p1.x) / 6;
+  const c2y = p2.y - (p3.y - p1.y) / 6;
+  return `M ${p1.x} ${p1.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
 }
 
 export default function TimelinePage() {
@@ -81,7 +150,7 @@ export default function TimelinePage() {
   const drag = useRef<{ x: number; left: number; moved: boolean } | null>(null);
 
   const built = useMemo(
-    () => (data && data.releases.length > 0 ? buildSegments(data.releases) : null),
+    () => (data && data.releases.length > 0 ? buildNodes(data.releases) : null),
     [data],
   );
 
@@ -101,11 +170,10 @@ export default function TimelinePage() {
 
   const decades = useMemo(() => {
     if (!built) return [];
-    const seen = new Map<number, number>(); // decade → x of its first year segment
-    for (const s of built.segments) {
-      if (s.kind !== 'year') continue;
-      const d = Math.floor(s.year / 10) * 10;
-      if (!seen.has(d)) seen.set(d, s.x);
+    const seen = new Map<number, number>(); // decade → x of its first year node
+    for (const n of built.nodes) {
+      const d = Math.floor(n.year / 10) * 10;
+      if (!seen.has(d)) seen.set(d, Math.max(0, n.x - n.rx - 24));
     }
     return [...seen.entries()].map(([decade, x]) => ({ decade, x }));
   }, [built]);
@@ -123,9 +191,8 @@ export default function TimelinePage() {
     );
   }
 
-  const { segments, total } = built;
-  const half = LEVELS * SLOT + 28; // floating space on each side of the axis
-  const stripHeight = half * 2;
+  const { nodes, total } = built;
+  const stripHeight = HALF * 2;
 
   return (
     <div>
@@ -135,9 +202,7 @@ export default function TimelinePage() {
           {decades.map((d) => (
             <button
               key={d.decade}
-              onClick={() =>
-                scrollerRef.current?.scrollTo({ left: Math.max(0, d.x - 48), behavior: 'smooth' })
-              }
+              onClick={() => scrollerRef.current?.scrollTo({ left: d.x, behavior: 'smooth' })}
               className="chip hover:bg-ink/10"
             >
               {d.decade}s
@@ -187,89 +252,88 @@ export default function TimelinePage() {
           }
         }}
       >
-        <div className="relative select-none" style={{ width: total + 48, height: stripHeight }}>
-          {/* The axis, vertically centered — covers float on both sides. */}
-          <div
-            className="absolute left-0 h-[3px] -translate-y-1/2 rounded bg-gradient-to-r from-mocha/30 via-accent/60 to-mocha/30"
-            style={{ top: half, width: total + 48 }}
-          />
-
-          {segments.map((seg) => {
-            if (seg.kind === 'break') {
-              return (
-                <span
-                  key={`b${seg.x}`}
-                  className="absolute -translate-y-1/2 text-center text-lg tracking-[0.4em] text-mocha/50"
-                  style={{ left: seg.x + 24, width: seg.width, top: half - 2 }}
+        <div className="relative select-none" style={{ width: total, height: stripHeight }}>
+          {/* The journey: a smooth curve from point to point, dashed across
+              collapsed silent gaps, with a halo dot at each year. */}
+          <svg
+            className="pointer-events-none absolute inset-0"
+            width={total}
+            height={stripHeight}
+            viewBox={`0 0 ${total} ${stripHeight}`}
+            fill="none"
+          >
+            {nodes.slice(0, -1).map((n, i) => (
+              <path
+                key={`leg-${n.year}`}
+                d={legPath(nodes, i)}
+                className="stroke-mocha/40"
+                strokeWidth={2.5}
+                strokeLinecap="round"
+                strokeDasharray={nodes[i + 1].breakBefore ? '2 10' : undefined}
+              />
+            ))}
+            {nodes.map((n, i) =>
+              n.breakBefore && i > 0 ? (
+                <text
+                  key={`gap-${n.year}`}
+                  x={(nodes[i - 1].x + n.x) / 2}
+                  y={(nodes[i - 1].y + n.y) / 2 - 12}
+                  textAnchor="middle"
+                  className="fill-mocha/60 text-sm tracking-[0.3em]"
                 >
                   ···
-                </span>
-              );
-            }
-            if (seg.kind === 'empty') {
-              const isDecade = seg.year % 10 === 0;
-              return (
-                <span
-                  key={seg.year}
-                  className={`absolute -translate-y-1/2 ${
-                    isDecade ? 'h-3 w-[2.5px] bg-accent/70' : 'h-1.5 w-px bg-mocha/40'
-                  }`}
-                  style={{ left: seg.x + 24 + seg.width / 2, top: half }}
-                />
-              );
-            }
-            const isDecade = seg.year % 10 === 0;
-            return (
-              <div key={seg.year}>
-                {/* Year badge sitting ON the line */}
-                <span
-                  className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-full px-2 py-0.5 ${
-                    isDecade
-                      ? 'bg-accent font-display text-sm font-bold text-cream shadow'
-                      : 'bg-cream text-[11px] font-semibold text-mocha ring-1 ring-mocha/30'
-                  }`}
-                  style={{ left: seg.x + 24 + seg.width / 2, top: half }}
+                </text>
+              ) : null,
+            )}
+            {nodes.map((n) => (
+              <g key={`dot-${n.year}`}>
+                <circle cx={n.x} cy={n.y} r={n.isDecade ? 13 : 10} className="fill-accent/20" />
+                <circle cx={n.x} cy={n.y} r={n.isDecade ? 6 : 4.5} className="fill-accent" />
+              </g>
+            ))}
+          </svg>
+
+          {nodes.map((node) => (
+            <div key={node.year}>
+              {/* Year label hanging just under its point */}
+              <span
+                className={`absolute z-10 -translate-x-1/2 rounded-full px-2 py-0.5 ${
+                  node.isDecade
+                    ? 'bg-accent font-display text-sm font-bold text-cream shadow'
+                    : 'bg-cream text-[11px] font-semibold text-mocha ring-1 ring-mocha/30'
+                }`}
+                style={{ left: node.x, top: node.y + 16 }}
+              >
+                {node.year}
+              </span>
+              {node.covers.map(({ release: r, px, py, j }) => (
+                <div
+                  key={r.id}
+                  className="animate-tl-float absolute hover:z-20 hover:[animation-play-state:paused]"
+                  style={{
+                    left: node.x + px - j.size / 2,
+                    top: node.y + py - j.size / 2,
+                    animationDuration: `${j.dur}s`,
+                    animationDelay: `${j.delay}s`,
+                  }}
                 >
-                  {seg.year}
-                </span>
-                {seg.releases.map((r, i) => {
-                  const j = jitter(r.id);
-                  const perColumn = LEVELS * 2;
-                  const col = Math.floor(i / perColumn);
-                  const slot = i % perColumn;
-                  const side = slot % 2 === 0 ? -1 : 1; // above / below
-                  const level = Math.floor(slot / 2); // 0 = nearest the axis
-                  const y = half + side * (34 + level * SLOT + (SLOT - 8 - j.size) / 2) + j.dy;
-                  return (
-                    <div
-                      key={r.id}
-                      className="animate-tl-float absolute hover:z-20 hover:[animation-play-state:paused]"
-                      style={{
-                        left: seg.x + 24 + SEG_PAD + col * SLOT + (SLOT - 10 - j.size) / 2 + j.dx,
-                        top: side < 0 ? y - j.size : y,
-                        animationDuration: `${j.dur}s`,
-                        animationDelay: `${j.delay}s`,
-                      }}
+                  {/* rotation lives on its own layer: the float animation
+                      owns the outer transform, hover-scale the inner one */}
+                  <div style={{ transform: `rotate(${j.rot}deg)` }}>
+                    <Link
+                      to={`/release/${r.id}`}
+                      title={`${r.artist} — ${r.title} (${r.year})`}
+                      className="block overflow-hidden rounded-md shadow-lg ring-1 ring-ink/15 transition-transform duration-150 hover:scale-110"
+                      style={{ width: j.size, height: j.size }}
+                      draggable={false}
                     >
-                      {/* rotation lives on its own layer: the float animation
-                          owns the outer transform, hover-scale the inner one */}
-                      <div style={{ transform: `rotate(${j.rot}deg)` }}>
-                        <Link
-                          to={`/release/${r.id}`}
-                          title={`${r.artist} — ${r.title} (${r.year})`}
-                          className="block overflow-hidden rounded-md shadow-lg ring-1 ring-ink/15 transition-transform duration-150 hover:scale-110"
-                          style={{ width: j.size, height: j.size }}
-                          draggable={false}
-                        >
-                          <Cover src={r.coverUrl} title={r.title} artist={r.artist} />
-                        </Link>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
+                      <Cover src={r.coverUrl} title={r.title} artist={r.artist} />
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       </div>
     </div>
