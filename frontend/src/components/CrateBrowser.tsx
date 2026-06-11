@@ -388,8 +388,9 @@ export function CrateBrowser({ items, sortHint }: { items: ReleaseListItem[]; so
         })}
       </div>
 
-      {/* Now-browsing bar, stays visible while the grid scrolls */}
-      <div className="pointer-events-none sticky bottom-4 z-30 mt-8 flex justify-center">
+      {/* Now-browsing bar, stays visible while the grid scrolls (sits above
+          the mobile bottom tab bar) */}
+      <div className="pointer-events-none sticky bottom-20 z-30 mt-8 flex justify-center md:bottom-4">
         <div className="pointer-events-auto card flex items-center gap-4 px-4 py-2 shadow-xl">
           <button
             className="btn-outline px-3"
