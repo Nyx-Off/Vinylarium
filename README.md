@@ -29,7 +29,7 @@ profils utilisateurs.
 - **Fiches artistes (MusicBrainz)** — pour chaque groupe : **membres** avec instruments, périodes (arrivée/départ, deux passages distincts), badge fondateur ; pour chaque musicien : ses groupes ; plus ses disques et ses apparitions en crédit dans la collection.
 - **Paroles (Genius)** — récupération automatique des paroles piste par piste lors de l'enrichissement (file dédiée, *best-effort*), ou à la demande ; chaque résultat est **validé** (titre **et** artiste doivent correspondre) pour ne jamais stocker les paroles d'une autre chanson.
 - **Anecdotes d'album (Genius)** — la description « à propos » de l'album est récupérée avec les paroles, **traduite automatiquement en français** (langue configurable via `ANECDOTE_LANG`) et affichée sur la fiche du disque.
-- **Bibliothèque visuelle** — mur de pochettes ou **bac à vinyles** (feuilletage vertical façon disquaire), bouton **« au hasard »** avec effet roulette, responsive du mobile à la tablette.
+- **Bibliothèque visuelle** — mur de pochettes ou **allée de bacs à vinyles** : des caisses en bois en 3D alignées sur une grille (~12 disques chacune, étiquetées selon le tri), toute la collection sur une seule page. On feuillette **de disque en disque et de bac en bac** comme chez un disquaire : le paquet se tient debout, les pochettes déjà vues basculent vers l'avant contre le rebord, le disque courant fait face — molette directement sur le bac sous la souris, glissement, flèches clavier, clic pour ouvrir la fiche. Bouton **« au hasard »** avec effet roulette.
 - **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production) avec le détail des instruments, **line-up du groupe à l'année du disque** (déduit des périodes MusicBrainz), tracklist, paroles, anecdotes, identifiants, versions (live, réédition, remaster…), notes, lien Discogs ; **galerie de toutes les images** (recto / verso / photos) avec visionneuse plein écran navigable.
 - **Mode vitrine** — affichage plein écran d'un disque, pochette en **objet 3D** qui tourne pour montrer recto/verso ; lancer la pochette au doigt lui donne de l'**inertie** (pensé tablette).
 - **Globe interactif** — globe « cartographie ancienne » manipulable (rotation, glisser, **zoom molette / pincement**), deux vues : **origine des artistes** (MusicBrainz) ou **pays de pressage** (Discogs) ; clic sur un pays pour filtrer.
@@ -154,7 +154,7 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 ## 🗺️ Feuille de route
 
 - [x] Import Discogs + enrichissement (toutes les images typées recto/verso/photos, crédits, tracklist)
-- [x] Bibliothèque (mur / bac feuilletable), fiches détaillées + galerie d'images, recherche croisée
+- [x] Bibliothèque (mur / **bacs à vinyles 3D** feuilletables de bac en bac), fiches détaillées + galerie d'images, recherche croisée
 - [x] Rangement physique, ajout manuel, profils
 - [x] **Paroles via Genius** (récupération automatique piste par piste)
 - [x] **Globe / carte du monde** interactif : origine des **artistes** (MusicBrainz) ou du pressage

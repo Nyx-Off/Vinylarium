@@ -37,7 +37,7 @@ export const releaseQuerySchema = z.object({
     .enum(['addedDesc', 'addedAsc', 'title', 'artist', 'yearAsc', 'yearDesc', 'ratingDesc'])
     .default('addedDesc'),
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(200).default(60),
+  pageSize: z.coerce.number().int().min(1).max(1000).default(60),
 });
 
 export type ReleaseQuery = z.infer<typeof releaseQuerySchema>;
