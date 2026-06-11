@@ -97,6 +97,7 @@ export async function applyDiscogsRelease(releaseId: string, data: any): Promise
   // Credits — extraartists; role may be comma-joined ("Producer, Written-By").
   const extra: any[] = Array.isArray(data.extraartists) ? data.extraartists : [];
   let cpos = 0;
+  const seenCredit = new Set<string>(); // artistId|roleId|detail
   for (const entry of extra) {
     if (!entry?.name || !entry?.role) continue;
     const artist = await getArtist(entry);
@@ -104,6 +105,7 @@ export async function applyDiscogsRelease(releaseId: string, data: any): Promise
       const { base, detail } = parseRole(raw);
       if (!base) continue;
       const role = await upsertRole(base);
+      seenCredit.add(`${artist.id}|${role.id}|${detail ?? ''}`);
       await prisma.credit.create({
         data: {
           releaseId,
@@ -116,6 +118,62 @@ export async function applyDiscogsRelease(releaseId: string, data: any): Promise
         },
       });
     }
+  }
+
+  // Per-track credits — Discogs nests many musician credits (often with the
+  // exact instrument model, e.g. "Synthesizer [Yamaha DX7]") under
+  // tracklist[].extraartists instead of the release-level list. Merge them by
+  // artist+role+detail, accumulating track positions, and skip lines the
+  // release-level credits already carry.
+  const perTrack = new Map<
+    string,
+    { artistId: string; roleId: string; detail: string | null; raw: string; positions: string[] }
+  >();
+  const collectTrackCredits = async (t: any) => {
+    const pos = typeof t?.position === 'string' ? t.position.trim() : '';
+    for (const entry of Array.isArray(t?.extraartists) ? t.extraartists : []) {
+      if (!entry?.name || !entry?.role) continue;
+      const artist = await getArtist(entry);
+      for (const raw of splitRoles(entry.role)) {
+        const { base, detail } = parseRole(raw);
+        if (!base) continue;
+        const role = await upsertRole(base);
+        const key = `${artist.id}|${role.id}|${detail ?? ''}`;
+        if (seenCredit.has(key)) continue;
+        const acc = perTrack.get(key);
+        if (acc) {
+          if (pos && !acc.positions.includes(pos)) acc.positions.push(pos);
+        } else {
+          perTrack.set(key, {
+            artistId: artist.id,
+            roleId: role.id,
+            detail,
+            raw,
+            positions: pos ? [pos] : [],
+          });
+        }
+      }
+    }
+    // Index tracks (medleys, suites) nest their parts under sub_tracks.
+    for (const sub of Array.isArray(t?.sub_tracks) ? t.sub_tracks : []) {
+      await collectTrackCredits(sub);
+    }
+  };
+  for (const t of Array.isArray(data.tracklist) ? data.tracklist : []) {
+    await collectTrackCredits(t);
+  }
+  for (const c of perTrack.values()) {
+    await prisma.credit.create({
+      data: {
+        releaseId,
+        artistId: c.artistId,
+        roleId: c.roleId,
+        detail: c.detail,
+        tracks: c.positions.join(', ') || null,
+        rawRole: c.raw,
+        position: cpos++,
+      },
+    });
   }
 
   // Labels

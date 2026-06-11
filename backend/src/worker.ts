@@ -19,6 +19,7 @@ import { prisma } from './db/prisma';
 import { processImport } from './worker/jobs/import';
 import { processEnrich } from './worker/jobs/enrich';
 import { processLyrics } from './worker/jobs/lyrics';
+import { processAlbumAnecdote } from './worker/jobs/anecdote';
 import { processArtistOrigin } from './worker/jobs/artist-origin';
 import { processArtistRelations } from './worker/jobs/artist-relations';
 import { discogs } from './worker/clients/discogs';
@@ -107,10 +108,13 @@ async function main() {
     { connection: bullConnection, concurrency: 4, limiter: { max, duration: 60_000 } },
   );
 
+  // 'lyrics' = full pass (album anecdote + per-track lyrics);
+  // 'anecdote' = Genius album description only (cheap backfills).
   const lyricsWorker = new Worker<LyricsJobData, void, string>(
     QUEUE_LYRICS,
     async (job) => {
-      await processLyrics(job.data.releaseId);
+      if (job.name === 'anecdote') await processAlbumAnecdote(job.data.releaseId);
+      else await processLyrics(job.data.releaseId);
     },
     { connection: bullConnection, concurrency: 1 },
   );

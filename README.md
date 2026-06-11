@@ -24,12 +24,13 @@ profils utilisateurs.
 ## ✨ Fonctionnalités
 
 - **Import Discogs** — déposez votre export CSV, suivez la progression en direct, dédoublonnage automatique.
-- **Enrichissement automatique** — un *worker* récupère **toutes les images** (recto, verso, rondelles, encarts…), crédits, musiciens, tracklist, labels, pays, genres et styles via l'API Discogs (en respectant les quotas).
+- **Enrichissement automatique** — un *worker* récupère **toutes les images** (recto, verso, rondelles, encarts…), crédits, musiciens, tracklist, labels, pays, genres et styles via l'API Discogs (en respectant les quotas). Les **crédits par piste** sont aussi ingérés, avec le **modèle exact des instruments** quand Discogs le précise (« Synthesizer · Yamaha DX7 »).
 - **Origine des artistes (MusicBrainz)** — le worker géolocalise chaque artiste/groupe (1 req/s, sans jeton) : le globe montre d'où vient *la musique*, pas seulement où le vinyle a été pressé.
 - **Fiches artistes (MusicBrainz)** — pour chaque groupe : **membres** avec instruments, périodes (arrivée/départ, deux passages distincts), badge fondateur ; pour chaque musicien : ses groupes ; plus ses disques et ses apparitions en crédit dans la collection.
-- **Paroles (Genius)** — récupération automatique des paroles piste par piste lors de l'enrichissement (file dédiée, *best-effort*), ou à la demande.
+- **Paroles (Genius)** — récupération automatique des paroles piste par piste lors de l'enrichissement (file dédiée, *best-effort*), ou à la demande ; chaque résultat est **validé** (titre **et** artiste doivent correspondre) pour ne jamais stocker les paroles d'une autre chanson.
+- **Anecdotes d'album (Genius)** — la description « à propos » de l'album est récupérée avec les paroles et affichée sur la fiche du disque.
 - **Bibliothèque visuelle** — mur de pochettes ou **bac à vinyles** (feuilletage vertical façon disquaire), bouton **« au hasard »** avec effet roulette, responsive du mobile à la tablette.
-- **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production), tracklist, paroles, identifiants, versions (live, réédition, remaster…), notes, lien Discogs ; **galerie de toutes les images** (recto / verso / photos) avec visionneuse plein écran navigable.
+- **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production) avec le détail des instruments, **line-up du groupe à l'année du disque** (déduit des périodes MusicBrainz), tracklist, paroles, anecdotes, identifiants, versions (live, réédition, remaster…), notes, lien Discogs ; **galerie de toutes les images** (recto / verso / photos) avec visionneuse plein écran navigable.
 - **Mode vitrine** — affichage plein écran d'un disque, pochette en **objet 3D** qui tourne pour montrer recto/verso ; lancer la pochette au doigt lui donne de l'**inertie** (pensé tablette).
 - **Globe interactif** — globe « cartographie ancienne » manipulable (rotation, glisser, **zoom molette / pincement**), deux vues : **origine des artistes** (MusicBrainz) ou **pays de pressage** (Discogs) ; clic sur un pays pour filtrer.
 - **Recherche croisée** — filtrez par artiste, instrument (« qui joue de la basse »), genre, style, label, pays, décennie, version, tag, emplacement…
@@ -61,8 +62,9 @@ profils utilisateurs.
 | `redis`    | File d'attente + cache                                     | Redis 7 |
 
 Le backend et le worker partagent une seule image (même code, deux points d'entrée). Le worker
-traite trois files BullMQ : `import` (parsing CSV), `enrich` (Discogs, *rate-limité*) et `lyrics`
-(Genius, séparée pour ne pas ralentir l'enrichissement).
+traite quatre files BullMQ : `import` (parsing CSV), `enrich` (Discogs, *rate-limité*), `lyrics`
+(paroles + anecdotes Genius, séparée pour ne pas ralentir l'enrichissement) et `musicbrainz`
+(origines et membres de groupes, 1 req/s).
 
 ## 🚀 Installation
 
@@ -140,7 +142,8 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 - [x] **Globe / carte du monde** interactif : origine des **artistes** (MusicBrainz) ou du pressage
 - [x] Mode vitrine 3D (inertie tactile), mode aléatoire, zoom pochettes, ré-enrichissement global
 - [x] **Fiches artistes** : membres de groupes, instruments et périodes (MusicBrainz)
-- [ ] Enrichissement **Genius** des anecdotes / annotations
+- [x] **Anecdotes d'album via Genius** (description « à propos ») + line-up du groupe à l'année du disque
+- [x] Crédits par piste et modèles d'instruments ; paroles Genius validées (titre + artiste)
 - [ ] Moteur de recherche dédié (**Meilisearch**) : recherche floue, paroles, anecdotes
 - [ ] Statistiques avancées, timeline, exploration par instruments, thèmes personnalisables
 

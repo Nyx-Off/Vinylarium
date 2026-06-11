@@ -101,6 +101,18 @@ export interface ReleaseDetail {
     isSpecialEdition: boolean;
   };
   artists: (ArtistRef & { anv: string | null; joinRel: string | null })[];
+  lineup: {
+    artistId: string;
+    artistName: string;
+    members: {
+      artistId: string | null;
+      name: string;
+      attributes: string[];
+      beginDate: string | null;
+      endDate: string | null;
+      ended: boolean;
+    }[];
+  }[];
   credits: Credit[];
   musicians: Credit[];
   singers: Credit[];

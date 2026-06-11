@@ -3,7 +3,10 @@ import { mediaUrl } from '../../lib/storage';
 
 /** Prisma include used to load a full release detail. */
 export const releaseDetailInclude = {
-  artists: { include: { artist: true }, orderBy: { position: 'asc' } },
+  artists: {
+    include: { artist: { include: { members: { orderBy: { position: 'asc' } } } } },
+    orderBy: { position: 'asc' },
+  },
   credits: { include: { artist: true, role: true }, orderBy: { position: 'asc' } },
   labels: { include: { label: true } },
   genres: { include: { genre: true } },
@@ -48,6 +51,46 @@ export function toListItem(r: any) {
 
 function artistRef(a: any) {
   return { id: a.id, name: a.name, imageUrl: mediaUrl(a.imagePath) };
+}
+
+const dateYear = (d: string | null) => {
+  const y = d ? parseInt(d.slice(0, 4), 10) : NaN;
+  return Number.isFinite(y) ? y : null;
+};
+
+/**
+ * The line-up of each billed group at the time the record came out, inferred
+ * from MusicBrainz member periods. Ex-members with no dates at all cannot be
+ * placed and are left out; current undated members always show.
+ */
+function buildLineup(r: any) {
+  const year: number | null = r.year ?? null;
+  const lineup: any[] = [];
+  for (const ra of r.artists ?? []) {
+    const members: any[] = ra.artist?.members ?? [];
+    if (members.length === 0) continue;
+    const active = members.filter((m) => {
+      const begin = dateYear(m.beginDate);
+      const end = dateYear(m.endDate);
+      if (m.ended && begin == null && end == null) return false;
+      if (year == null) return !m.ended; // undated release: show current members
+      return (begin == null || begin <= year) && (end == null || end >= year);
+    });
+    if (active.length === 0) continue;
+    lineup.push({
+      artistId: ra.artist.id,
+      artistName: ra.artist.name,
+      members: active.map((m) => ({
+        artistId: m.memberId,
+        name: m.name,
+        attributes: m.attributes ?? [],
+        beginDate: m.beginDate,
+        endDate: m.endDate,
+        ended: m.ended,
+      })),
+    });
+  }
+  return lineup;
 }
 
 /** Full DTO for the release detail page. */
@@ -99,6 +142,7 @@ export function toDetail(r: any) {
       anv: ra.anv,
       joinRel: ra.joinRel,
     })),
+    lineup: buildLineup(r),
     credits,
     musicians: byCategory(RoleCategory.INSTRUMENT),
     singers: byCategory(RoleCategory.VOCAL),
