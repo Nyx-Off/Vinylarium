@@ -55,9 +55,10 @@ function crateLabel(chunk: ReleaseListItem[], sortHint: string | undefined, star
  * slivers showing), everything already browsed lies flipped forward against
  * the low front edge, and the current sleeve is simply the first one still
  * standing, facing you. Wheel over whichever crate the
- * mouse is on (no click needed), vertical drag, arrow keys (←/→ record, ↑/↓
- * crate) or the bottom bar buttons; click a sleeve to jump to it, click the
- * active one to open its page.
+ * mouse is on (no click needed), HORIZONTAL swipe/drag (vertical stays free
+ * so touch devices can scroll the page), arrow keys (←/→ record, ↑/↓ crate)
+ * or the bottom bar buttons; click a sleeve to jump to it, click the active
+ * one to open its page.
  */
 export function CrateBrowser({ items, sortHint }: { items: ReleaseListItem[]; sortHint?: string }) {
   const [current, setCurrent] = useState(0);
@@ -66,7 +67,7 @@ export function CrateBrowser({ items, sortHint }: { items: ReleaseListItem[]; so
   const cellRefs = useRef<(HTMLDivElement | null)[]>([]);
   const currentRef = useRef(0);
   const wheelLock = useRef(false);
-  const drag = useRef<{ y: number; crate: number; moved: boolean } | null>(null);
+  const drag = useRef<{ x: number; crate: number; moved: boolean } | null>(null);
 
   const crates = useMemo(() => {
     const out: ReleaseListItem[][] = [];
@@ -152,25 +153,32 @@ export function CrateBrowser({ items, sortHint }: { items: ReleaseListItem[]; so
               key={ci}
               ref={(el) => (cellRefs.current[ci] = el)}
               data-crate={ci}
-              className={`relative h-[330px] touch-none select-none ${
+              // pan-y: a vertical touch scrolls the PAGE natively (the browser
+              // also cancels any tap once it takes the gesture, so no ghost
+              // clicks on sleeves) — flipping is the HORIZONTAL swipe.
+              className={`relative h-[330px] select-none [touch-action:pan-y] ${
                 isActiveCrate ? '' : 'cursor-pointer'
               }`}
               onClick={() => {
                 if (!isActiveCrate && !drag.current?.moved) setCurrent(ci * CRATE_SIZE);
               }}
               onPointerDown={(e) => {
-                drag.current = { y: e.clientY, crate: ci, moved: false };
+                drag.current = { x: e.clientX, crate: ci, moved: false };
               }}
               onPointerMove={(e) => {
                 const d = drag.current;
                 if (!d || e.buttons === 0) return;
-                const dy = e.clientY - d.y;
-                if (Math.abs(dy) > 52) {
+                const dx = e.clientX - d.x;
+                if (Math.abs(dx) > 48) {
                   if (Math.floor(currentRef.current / CRATE_SIZE) !== ci)
                     setCurrent(ci * CRATE_SIZE);
-                  else go(dy < 0 ? 1 : -1);
-                  drag.current = { y: e.clientY, crate: ci, moved: true };
+                  else go(dx < 0 ? 1 : -1); // swipe left = next, like a carousel
+                  drag.current = { x: e.clientX, crate: ci, moved: true };
                 }
+              }}
+              onPointerCancel={() => {
+                // the browser took the gesture (vertical page scroll)
+                drag.current = null;
               }}
               onPointerUp={() => {
                 // Let click handlers read `moved` before clearing it.
