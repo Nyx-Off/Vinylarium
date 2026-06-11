@@ -55,10 +55,11 @@ function crateLabel(chunk: ReleaseListItem[], sortHint: string | undefined, star
  * slivers showing), everything already browsed lies flipped forward against
  * the low front edge, and the current sleeve is simply the first one still
  * standing, facing you. Wheel over whichever crate the
- * mouse is on (no click needed), HORIZONTAL swipe/drag (vertical stays free
- * so touch devices can scroll the page), arrow keys (←/→ record, ↑/↓ crate)
- * or the bottom bar buttons; click a sleeve to jump to it, click the active
- * one to open its page.
+ * mouse is on (no click needed), swipe/drag in any direction but ONLY when
+ * the gesture starts on the bin itself (outside the bins a touch scrolls the
+ * page natively), arrow keys (←/→ record, ↑/↓ crate) or the bottom bar
+ * buttons; click a sleeve to jump to it, click the active one to open its
+ * page.
  */
 export function CrateBrowser({ items, sortHint }: { items: ReleaseListItem[]; sortHint?: string }) {
   const [current, setCurrent] = useState(0);
@@ -67,7 +68,7 @@ export function CrateBrowser({ items, sortHint }: { items: ReleaseListItem[]; so
   const cellRefs = useRef<(HTMLDivElement | null)[]>([]);
   const currentRef = useRef(0);
   const wheelLock = useRef(false);
-  const drag = useRef<{ x: number; crate: number; moved: boolean } | null>(null);
+  const drag = useRef<{ x: number; y: number; crate: number; moved: boolean } | null>(null);
 
   const crates = useMemo(() => {
     const out: ReleaseListItem[][] = [];
@@ -153,36 +154,11 @@ export function CrateBrowser({ items, sortHint }: { items: ReleaseListItem[]; so
               key={ci}
               ref={(el) => (cellRefs.current[ci] = el)}
               data-crate={ci}
-              // pan-y: a vertical touch scrolls the PAGE natively (the browser
-              // also cancels any tap once it takes the gesture, so no ghost
-              // clicks on sleeves) — flipping is the HORIZONTAL swipe.
-              className={`relative h-[330px] select-none [touch-action:pan-y] ${
+              className={`relative h-[330px] select-none ${
                 isActiveCrate ? '' : 'cursor-pointer'
               }`}
               onClick={() => {
                 if (!isActiveCrate && !drag.current?.moved) setCurrent(ci * CRATE_SIZE);
-              }}
-              onPointerDown={(e) => {
-                drag.current = { x: e.clientX, crate: ci, moved: false };
-              }}
-              onPointerMove={(e) => {
-                const d = drag.current;
-                if (!d || e.buttons === 0) return;
-                const dx = e.clientX - d.x;
-                if (Math.abs(dx) > 48) {
-                  if (Math.floor(currentRef.current / CRATE_SIZE) !== ci)
-                    setCurrent(ci * CRATE_SIZE);
-                  else go(dx < 0 ? 1 : -1); // swipe left = next, like a carousel
-                  drag.current = { x: e.clientX, crate: ci, moved: true };
-                }
-              }}
-              onPointerCancel={() => {
-                // the browser took the gesture (vertical page scroll)
-                drag.current = null;
-              }}
-              onPointerUp={() => {
-                // Let click handlers read `moved` before clearing it.
-                setTimeout(() => (drag.current = null), 0);
               }}
               onClickCapture={(e) => {
                 if (drag.current?.moved) {
@@ -202,6 +178,37 @@ export function CrateBrowser({ items, sortHint }: { items: ReleaseListItem[]; so
                 {crateLabel(chunk, sortHint, ci * CRATE_SIZE)}
               </span>
 
+              {/* Bin interaction zone, exactly the crate's width: a drag that
+                  STARTS here flips the records (any direction — vertical works
+                  like the wheel); a touch landing outside the bins keeps the
+                  native page scroll. */}
+              <div
+                className="absolute inset-y-0 left-1/2 -translate-x-1/2 [touch-action:none]"
+                style={{ width: W + 12 }}
+                onPointerDown={(e) => {
+                  drag.current = { x: e.clientX, y: e.clientY, crate: ci, moved: false };
+                }}
+                onPointerMove={(e) => {
+                  const d = drag.current;
+                  if (!d || e.buttons === 0) return;
+                  const dx = e.clientX - d.x;
+                  const dy = e.clientY - d.y;
+                  const delta = Math.abs(dy) >= Math.abs(dx) ? dy : dx;
+                  if (Math.abs(delta) > 48) {
+                    if (Math.floor(currentRef.current / CRATE_SIZE) !== ci)
+                      setCurrent(ci * CRATE_SIZE);
+                    else go(delta < 0 ? 1 : -1); // up or left = next
+                    drag.current = { x: e.clientX, y: e.clientY, crate: ci, moved: true };
+                  }
+                }}
+                onPointerCancel={() => {
+                  drag.current = null;
+                }}
+                onPointerUp={() => {
+                  // Let click handlers read `moved` before clearing it.
+                  setTimeout(() => (drag.current = null), 0);
+                }}
+              >
               {/* The 3D bin */}
               <div
                 className="absolute inset-x-0 bottom-1 flex justify-center transition-[filter,transform] duration-300"
@@ -357,7 +364,8 @@ export function CrateBrowser({ items, sortHint }: { items: ReleaseListItem[]; so
 
               {/* Flat, always-on-top click zone over the current sleeve's
                   visible face (the 3D quads of the flipped pile otherwise
-                  steal the hit even where the face is what you see). */}
+                  steal the hit even where the face is what you see). Lives
+                  INSIDE the interaction zone so drags starting on it flip. */}
               {isActiveCrate && active && (
                 <div
                   className="absolute left-1/2 z-10 -translate-x-1/2 cursor-pointer"
@@ -374,6 +382,7 @@ export function CrateBrowser({ items, sortHint }: { items: ReleaseListItem[]; so
                   }}
                 />
               )}
+              </div>
             </div>
           );
         })}
