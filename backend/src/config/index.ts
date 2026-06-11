@@ -49,6 +49,12 @@ export const config = {
   genius: {
     accessToken: optional('GENIUS_ACCESS_TOKEN'),
   },
+
+  anecdotes: {
+    // Target language for Genius album descriptions (empty string disables
+    // translation and keeps the original English).
+    translateTo: optional('ANECDOTE_LANG', 'fr'),
+  },
 } as const;
 
 export type AppConfig = typeof config;

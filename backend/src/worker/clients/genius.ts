@@ -95,6 +95,53 @@ function decodeEntities(s: string): string {
     .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)));
 }
 
+/**
+ * Inner HTML of every div whose opening tag matches `open`. Genius nests divs
+ * inside its lyrics containers (contributors/translations header, inline ads),
+ * so a non-greedy `.*?<\/div>` both truncates the lyrics at the first nested
+ * close tag and leaks header junk — div depth has to be balanced by hand.
+ */
+function divContents(html: string, open: RegExp): string[] {
+  const out: string[] = [];
+  const openRe = new RegExp(open.source, 'gis');
+  for (let m = openRe.exec(html); m; m = openRe.exec(html)) {
+    const start = m.index + m[0].length;
+    const tags = /<div\b[^>]*>|<\/div\s*>/gi;
+    tags.lastIndex = start;
+    let depth = 1;
+    let end = -1;
+    for (let t = tags.exec(html); t; t = tags.exec(html)) {
+      depth += t[0].startsWith('</') ? -1 : 1;
+      if (depth === 0) {
+        end = t.index;
+        openRe.lastIndex = tags.lastIndex;
+        break;
+      }
+    }
+    if (end < 0) break; // malformed tail — keep what was already collected
+    out.push(html.slice(start, end));
+  }
+  return out;
+}
+
+/** Drop the non-lyrics blocks Genius embeds in the containers (header, ads). */
+function stripExcludedDivs(inner: string): string {
+  const openRe = /<div\b[^>]*data-exclude-from-selection="true"[^>]*>/gi;
+  let out = '';
+  let cursor = 0;
+  for (let m = openRe.exec(inner); m; m = openRe.exec(inner)) {
+    out += inner.slice(cursor, m.index);
+    const tags = /<div\b[^>]*>|<\/div\s*>/gi;
+    tags.lastIndex = m.index + m[0].length;
+    let depth = 1;
+    let t: RegExpExecArray | null = null;
+    while (depth > 0 && (t = tags.exec(inner))) depth += t[0].startsWith('</') ? -1 : 1;
+    cursor = depth === 0 && t ? tags.lastIndex : inner.length;
+    openRe.lastIndex = cursor;
+  }
+  return out + inner.slice(cursor);
+}
+
 /** Scrape the lyrics text from a Genius song page. */
 async function scrape(url: string): Promise<string | null> {
   const res = await fetchWithTimeout(url, { headers: { 'User-Agent': config.discogs.userAgent } }, 15_000);
@@ -102,11 +149,11 @@ async function scrape(url: string): Promise<string | null> {
   const html = await res.text();
 
   // Modern Genius wraps each block in a div[data-lyrics-container="true"].
-  const blocks = [...html.matchAll(/<div[^>]*data-lyrics-container="true"[^>]*>(.*?)<\/div>/gis)];
+  const blocks = divContents(html, /<div\b[^>]*data-lyrics-container="true"[^>]*>/);
   if (blocks.length === 0) return null;
 
   const text = blocks
-    .map((m) => decodeEntities(m[1]))
+    .map((b) => decodeEntities(stripExcludedDivs(b)))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();

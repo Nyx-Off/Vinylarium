@@ -28,7 +28,7 @@ profils utilisateurs.
 - **Origine des artistes (MusicBrainz)** — le worker géolocalise chaque artiste/groupe (1 req/s, sans jeton) : le globe montre d'où vient *la musique*, pas seulement où le vinyle a été pressé.
 - **Fiches artistes (MusicBrainz)** — pour chaque groupe : **membres** avec instruments, périodes (arrivée/départ, deux passages distincts), badge fondateur ; pour chaque musicien : ses groupes ; plus ses disques et ses apparitions en crédit dans la collection.
 - **Paroles (Genius)** — récupération automatique des paroles piste par piste lors de l'enrichissement (file dédiée, *best-effort*), ou à la demande ; chaque résultat est **validé** (titre **et** artiste doivent correspondre) pour ne jamais stocker les paroles d'une autre chanson.
-- **Anecdotes d'album (Genius)** — la description « à propos » de l'album est récupérée avec les paroles et affichée sur la fiche du disque.
+- **Anecdotes d'album (Genius)** — la description « à propos » de l'album est récupérée avec les paroles, **traduite automatiquement en français** (langue configurable via `ANECDOTE_LANG`) et affichée sur la fiche du disque.
 - **Bibliothèque visuelle** — mur de pochettes ou **bac à vinyles** (feuilletage vertical façon disquaire), bouton **« au hasard »** avec effet roulette, responsive du mobile à la tablette.
 - **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production) avec le détail des instruments, **line-up du groupe à l'année du disque** (déduit des périodes MusicBrainz), tracklist, paroles, anecdotes, identifiants, versions (live, réédition, remaster…), notes, lien Discogs ; **galerie de toutes les images** (recto / verso / photos) avec visionneuse plein écran navigable.
 - **Mode vitrine** — affichage plein écran d'un disque, pochette en **objet 3D** qui tourne pour montrer recto/verso ; lancer la pochette au doigt lui donne de l'**inertie** (pensé tablette).
@@ -106,7 +106,24 @@ Au premier lancement, l'application vous invite à **créer le premier compte**.
 | `DISCOGS_TOKEN` | Jeton d'accès personnel Discogs (enrichissement) |
 | `DISCOGS_USER_AGENT` | User-Agent envoyé à Discogs (requis par leur API) |
 | `GENIUS_ACCESS_TOKEN` | *Client Access Token* Genius (active les paroles) — https://genius.com/api-clients |
+| `ANECDOTE_LANG` | Langue de traduction des anecdotes d'album (défaut `fr` ; vide = anglais d'origine) |
 | `MUSICBRAINZ_USER_AGENT` | User-Agent MusicBrainz (origine des artistes ; lecture sans OAuth ni jeton) |
+
+## 🔄 Mise à jour
+
+```bash
+bash scripts/update.sh
+```
+
+Le script enchaîne : sauvegarde de la base → `git pull` → rebuild des images → redéploiement
+(les migrations Prisma s'appliquent automatiquement au démarrage du backend). Équivalent manuel :
+
+```bash
+bash scripts/backup.sh
+git pull
+docker compose build
+docker compose up -d
+```
 
 ## 💾 Sauvegarde & restauration
 
@@ -142,8 +159,8 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 - [x] **Globe / carte du monde** interactif : origine des **artistes** (MusicBrainz) ou du pressage
 - [x] Mode vitrine 3D (inertie tactile), mode aléatoire, zoom pochettes, ré-enrichissement global
 - [x] **Fiches artistes** : membres de groupes, instruments et périodes (MusicBrainz)
-- [x] **Anecdotes d'album via Genius** (description « à propos ») + line-up du groupe à l'année du disque
-- [x] Crédits par piste et modèles d'instruments ; paroles Genius validées (titre + artiste)
+- [x] **Anecdotes d'album via Genius** (description « à propos », **traduite en français**) + line-up du groupe à l'année du disque
+- [x] Crédits par piste et modèles d'instruments ; paroles Genius validées (titre + artiste) et **complètes** (extraction corrigée des pages Genius)
 - [ ] Moteur de recherche dédié (**Meilisearch**) : recherche floue, paroles, anecdotes
 - [ ] Statistiques avancées, timeline, exploration par instruments, thèmes personnalisables
 
