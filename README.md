@@ -33,7 +33,7 @@ profils utilisateurs.
 - **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production) avec le détail des instruments, **line-up du groupe à l'année du disque** (déduit des périodes MusicBrainz), tracklist, paroles, anecdotes, identifiants, versions (live, réédition, remaster…), notes, lien Discogs ; **galerie de toutes les images** (recto / verso / photos) avec visionneuse plein écran navigable.
 - **Mode vitrine** — affichage plein écran d'un disque, pochette en **objet 3D** qui tourne pour montrer recto/verso ; lancer la pochette au doigt lui donne de l'**inertie** (pensé tablette).
 - **Globe interactif** — globe « cartographie ancienne » manipulable (rotation, glisser, **zoom molette / pincement**), deux vues : **origine des artistes** (MusicBrainz) ou **pays de pressage** (Discogs) ; clic sur un pays pour filtrer.
-- **Frise chronologique** — toute la collection sur une ligne du temps horizontale, pochettes **flottantes** autour de leur année (animation suspendue au survol), accès rapide par décennie, molette ou glisser pour voyager du plus ancien au plus récent.
+- **Frise chronologique** — la collection en **parcours de point en point** : chaque année est un point posé librement sur la toile (pas d'axe rectiligne), relié au suivant par une **courbe qui serpente**, et les pochettes **virevoltent** en nuage autour de leur année (animation suspendue au survol) ; accès rapide par décennie, molette ou glisser pour voyager du plus ancien au plus récent.
 - **Recherche croisée** — filtrez par artiste, instrument (« qui joue de la basse »), genre, style, label, pays, décennie, version, tag, emplacement…
 - **Rangement physique** — décrivez meubles, étagères, bacs et positions ; retrouvez et filtrez vos disques par emplacement.
 - **Ajout manuel** — pour les disques absents de Discogs.
@@ -162,7 +162,7 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 - [x] **Fiches artistes** : membres de groupes, instruments et périodes (MusicBrainz)
 - [x] **Anecdotes d'album via Genius** (description « à propos », **traduite en français**) + line-up du groupe à l'année du disque
 - [x] Crédits par piste et modèles d'instruments ; paroles Genius validées (titre + artiste) et **complètes** (extraction corrigée des pages Genius)
-- [x] **Frise chronologique** (pochettes par année, navigation par décennie)
+- [x] **Frise chronologique** en parcours de point en point (pochettes virevoltant autour de chaque année, navigation par décennie)
 - [ ] Moteur de recherche dédié (**Meilisearch**) : recherche floue, paroles, anecdotes
 - [ ] Statistiques avancées, exploration par instruments, thèmes personnalisables
 
