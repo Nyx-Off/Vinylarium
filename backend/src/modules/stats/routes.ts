@@ -4,6 +4,7 @@ import { prisma } from '../../db/prisma';
 import { config } from '../../config';
 import { fetchWithTimeout } from '../../lib/http';
 import { geoForCountry, geoForISO } from '../../lib/countries';
+import { mediaUrl } from '../../lib/storage';
 
 type IntegrationStatus = {
   name: string;
@@ -169,6 +170,31 @@ export async function statsRoutes(app: FastifyInstance) {
       origins: [...merged.values()].sort((a, b) => b.count - a.count),
       artistsResolved: resolved,
       artistsPending: pendingOrigins,
+    };
+  });
+
+  // ── Chronological timeline ────────────────────────────────────────────
+  // Every dated release, oldest first — feeds the /timeline page. Releases
+  // without a year can't be placed on the axis; their count is returned so
+  // the UI can mention them.
+  app.get('/timeline', async () => {
+    const [releases, undated] = await Promise.all([
+      prisma.release.findMany({
+        where: { year: { not: null } },
+        orderBy: [{ year: 'asc' }, { artistDisplay: 'asc' }, { title: 'asc' }],
+        select: { id: true, title: true, artistDisplay: true, year: true, coverPath: true },
+      }),
+      prisma.release.count({ where: { year: null } }),
+    ]);
+    return {
+      releases: releases.map((r) => ({
+        id: r.id,
+        title: r.title,
+        artist: r.artistDisplay,
+        year: r.year!,
+        coverUrl: mediaUrl(r.coverPath),
+      })),
+      undated,
     };
   });
 

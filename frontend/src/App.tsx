@@ -12,6 +12,7 @@ import ImportPage from './pages/ImportPage';
 import ManualAddPage from './pages/ManualAddPage';
 import SettingsPage from './pages/SettingsPage';
 import MapPage from './pages/MapPage';
+import TimelinePage from './pages/TimelinePage';
 import ShowcasePage from './pages/ShowcasePage';
 
 export default function App() {
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="/search" element={<SearchPage />} />
         <Route path="/storage" element={<StoragePage />} />
         <Route path="/map" element={<MapPage />} />
+        <Route path="/timeline" element={<TimelinePage />} />
         <Route path="/import" element={<ImportPage />} />
         <Route path="/add" element={<ManualAddPage />} />
         <Route path="/settings" element={<SettingsPage />} />

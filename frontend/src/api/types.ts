@@ -196,6 +196,19 @@ export interface OriginsResponse {
   artistsPending: number;
 }
 
+export interface TimelineRelease {
+  id: string;
+  title: string;
+  artist: string;
+  year: number;
+  coverUrl: string | null;
+}
+
+export interface TimelineResponse {
+  releases: TimelineRelease[];
+  undated: number;
+}
+
 export interface ReenrichStatus {
   inProgress: boolean;
   waiting: number;

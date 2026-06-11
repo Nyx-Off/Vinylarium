@@ -117,6 +117,13 @@ export function useOrigins(mode: T.OriginMode = 'artists') {
   });
 }
 
+export function useTimeline() {
+  return useQuery({
+    queryKey: ['timeline'],
+    queryFn: async () => (await api.get<T.TimelineResponse>('/stats/timeline')).data,
+  });
+}
+
 export function useReenrichStatus() {
   return useQuery({
     queryKey: ['reenrich-status'],
