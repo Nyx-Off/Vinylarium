@@ -158,3 +158,11 @@ export function useArtistSearch(q: string) {
         .artists,
   });
 }
+
+export function useSystemVersion() {
+  return useQuery({
+    queryKey: ['system-version'],
+    refetchOnWindowFocus: false,
+    queryFn: async () => (await api.get<T.SystemVersion>('/system/version')).data,
+  });
+}

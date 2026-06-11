@@ -55,6 +55,15 @@ export const config = {
     // translation and keeps the original English).
     translateTo: optional('ANECDOTE_LANG', 'fr'),
   },
+
+  update: {
+    // GitHub repo the daily/manual update check compares against.
+    repo: optional('UPDATE_REPO', 'Nyx-Off/Vinylarium'),
+    branch: optional('UPDATE_BRANCH', 'main'),
+    // Host checkout's .git, mounted read-only into the backend container —
+    // the local commit is read from there (no git binary needed).
+    gitDir: optional('GIT_DIR_PATH', '/repo/.git'),
+  },
 } as const;
 
 export type AppConfig = typeof config;

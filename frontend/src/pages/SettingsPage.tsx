@@ -2,9 +2,9 @@ import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, errorMessage } from '../api/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { useStats, useIntegrations, useReenrichStatus } from '../api/hooks';
+import { useStats, useIntegrations, useReenrichStatus, useSystemVersion } from '../api/hooks';
 import { useAuth } from '../lib/auth';
-import { Integration } from '../api/types';
+import { Integration, UpdateStatus } from '../api/types';
 
 export default function SettingsPage() {
   const { user, refresh } = useAuth();
@@ -51,6 +51,66 @@ export default function SettingsPage() {
       setBackupMsg(errorMessage(e));
     } finally {
       setBackupBusy(false);
+    }
+  }
+
+  const { data: version } = useSystemVersion();
+  const [updBusy, setUpdBusy] = useState<'idle' | 'checking' | 'updating'>('idle');
+  const [updMsg, setUpdMsg] = useState('');
+  const [updStatus, setUpdStatus] = useState<UpdateStatus | null>(null);
+
+  async function checkUpdates() {
+    setUpdBusy('checking');
+    setUpdMsg('');
+    try {
+      await api.post('/system/check');
+      qc.invalidateQueries({ queryKey: ['system-version'] });
+    } catch (e) {
+      setUpdMsg(errorMessage(e));
+    } finally {
+      setUpdBusy('idle');
+    }
+  }
+
+  // The backend restarts mid-update: polling errors are EXPECTED, keep going.
+  async function pollUpdate(startedAt: number) {
+    try {
+      const { data } = await api.get<UpdateStatus>('/system/update-status');
+      setUpdStatus(data);
+      if (data.state === 'done') {
+        setUpdBusy('idle');
+        setUpdMsg('Mise à jour terminée ✓ — rechargez la page pour voir la nouvelle version.');
+        qc.invalidateQueries({ queryKey: ['system-version'] });
+        return;
+      }
+      if (data.state === 'error') {
+        setUpdBusy('idle');
+        setUpdMsg(`Échec : ${data.detail ?? 'erreur inconnue'}`);
+        return;
+      }
+    } catch {
+      /* API en cours de redémarrage */
+    }
+    if (Date.now() - startedAt > 12 * 60_000) {
+      setUpdBusy('idle');
+      setUpdMsg('Délai dépassé — consultez les journaux du service « updater ».');
+      return;
+    }
+    setTimeout(() => pollUpdate(startedAt), 4000);
+  }
+
+  async function launchUpdate() {
+    if (!window.confirm('Mettre à jour Vinylarium maintenant ? L’application redémarrera (moins d’une minute d’interruption).'))
+      return;
+    setUpdBusy('updating');
+    setUpdMsg('');
+    setUpdStatus(null);
+    try {
+      await api.post('/system/update');
+      pollUpdate(Date.now());
+    } catch (e) {
+      setUpdMsg(errorMessage(e));
+      setUpdBusy('idle');
     }
   }
 
@@ -231,6 +291,88 @@ export default function SettingsPage() {
             </button>
           </div>
           {backupMsg && <p className="mt-2 text-sm text-accent">{backupMsg}</p>}
+        </div>
+      </section>
+
+      <section className="card space-y-3 p-6">
+        <h2 className="font-display text-xl font-bold text-ink">Mise à jour de l'application</h2>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="chip">
+            Version installée : {version?.currentSha ? version.currentSha.slice(0, 7) : 'inconnue'}
+          </span>
+          {version?.check && (
+            <span className="text-mocha">
+              Dernière vérification :{' '}
+              {new Date(version.check.checkedAt).toLocaleString('fr-FR', {
+                dateStyle: 'short',
+                timeStyle: 'short',
+              })}{' '}
+              — vérification automatique chaque jour.
+            </span>
+          )}
+        </div>
+
+        {version?.check?.error && (
+          <p className="text-sm text-red-700">Vérification impossible : {version.check.error}</p>
+        )}
+
+        {version?.check?.updateAvailable ? (
+          <div className="rounded-xl bg-accent/10 px-4 py-3">
+            <p className="font-semibold text-accent">
+              Mise à jour disponible
+              {version.check.behindBy ? ` — ${version.check.behindBy} commit(s) de retard` : ''}
+            </p>
+            <ul className="mt-2 space-y-1 text-sm text-ink">
+              {version.check.commits.slice(0, 8).map((c) => (
+                <li key={c.sha} className="flex gap-2">
+                  <code className="shrink-0 rounded bg-ink/10 px-1 text-xs leading-5">
+                    {c.sha.slice(0, 7)}
+                  </code>
+                  <span className="line-clamp-1">{c.message}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          version?.check &&
+          !version.check.error && <p className="text-sm text-mocha">✓ Vinylarium est à jour.</p>
+        )}
+
+        {updBusy === 'updating' && (
+          <div className="rounded-xl bg-ink/5 px-4 py-3">
+            <p className="text-sm font-semibold">
+              ⏳ {updStatus?.detail ?? 'Mise à jour en cours…'}
+            </p>
+            <p className="text-xs text-mocha">
+              Récupération du code, reconstruction des images puis redémarrage — la page peut
+              brièvement perdre la connexion, ne la fermez pas.
+            </p>
+          </div>
+        )}
+        {updMsg && <p className="text-sm text-accent">{updMsg}</p>}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={checkUpdates}
+            disabled={updBusy !== 'idle'}
+            className="btn-outline"
+          >
+            {updBusy === 'checking' ? '…' : '⟳ Vérifier maintenant'}
+          </button>
+          {user?.isAdmin && (
+            <button
+              onClick={launchUpdate}
+              disabled={updBusy !== 'idle' || !version?.check?.updateAvailable}
+              className="btn-primary"
+              title={
+                version?.check?.updateAvailable
+                  ? 'Récupère la dernière version depuis GitHub et redémarre'
+                  : 'Aucune mise à jour disponible'
+              }
+            >
+              ⬆ Mettre à jour
+            </button>
+          )}
         </div>
       </section>
 

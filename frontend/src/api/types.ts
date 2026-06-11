@@ -260,3 +260,33 @@ export interface ArtistDetail {
   releases: ReleaseListItem[];
   appearsOn: (ReleaseListItem & { roles: string[] })[];
 }
+
+// ── System update ────────────────────────────────────────────────────────────
+
+export interface UpdateCommit {
+  sha: string;
+  message: string;
+  date: string | null;
+}
+
+export interface UpdateCheck {
+  checkedAt: string;
+  currentSha: string | null;
+  latestSha: string | null;
+  updateAvailable: boolean;
+  behindBy: number | null;
+  commits: UpdateCommit[];
+  error: string | null;
+}
+
+export interface SystemVersion {
+  currentSha: string | null;
+  check: UpdateCheck | null;
+}
+
+export interface UpdateStatus {
+  state: 'idle' | 'requested' | 'running' | 'done' | 'error';
+  detail: string | null;
+  at: string | null;
+  log: string[];
+}
