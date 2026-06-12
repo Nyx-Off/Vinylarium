@@ -49,30 +49,55 @@ profils utilisateurs.
 
 ## 🏗️ Architecture
 
+Six services Docker (`docker-compose.yml`) :
+
 ```
-┌──────────┐   /api   ┌──────────┐        ┌────────────┐
-│ frontend │ ───────▶ │ backend  │ ─────▶ │ PostgreSQL │
-│  (nginx) │          │ (Fastify)│        └────────────┘
-└──────────┘          └────┬─────┘
-                           │ enqueue (BullMQ)
-                      ┌────▼─────┐  ┌───────┐
-                      │  worker  │─▶│ Redis │
-                      │ (Discogs)│  └───────┘
-                      └──────────┘
+        navigateur ─── http://localhost:8080
+                              │
+                       ┌──────▼───────┐    /api     ┌───────────────┐        ┌───────────────┐
+                       │   frontend   │ ──────────▶ │    backend    │ ─────▶ │ db            │
+                       │    (nginx)   │             │   (Fastify)   │        │ PostgreSQL 16 │
+                       └──────┬───────┘             └───┬───────┬───┘        └───────▲───────┘
+                              │ /media                  │       │ enqueue           │
+                       ┌──────▼───────┐                 │   ┌───▼───┐   files   ┌───┴───────┐
+                       │   volume     │◀────────────────┼───│ Redis │◀─────────▶│  worker   │
+                       │  /data       │  pochettes,     │   │BullMQ │  (4 files)│  (BullMQ) │
+                       │  (storage)   │  avatars, CSV   │   └───────┘           └─────┬─────┘
+                       └──────────────┘                 │                             │
+                                          ┌─────────────▼──┐        ┌────────────────┼─────────────────┐
+                                          │    updater     │        ▼                ▼                 ▼
+                                          │ (git + compose)│     Discogs          Genius          MusicBrainz
+                                          └────────────────┘   (fiches, images,  (paroles,       (origine des
+                                                                 collections)     anecdotes)      artistes, membres)
 ```
 
 | Service    | Rôle                                                       | Stack |
 |------------|------------------------------------------------------------|-------|
-| `frontend` | Interface web (SPA)                                        | React + Vite + Tailwind, servie par nginx |
-| `backend`  | API REST, auth, import, recherche ; applique les migrations | Node 20 + Fastify + Prisma |
-| `worker`   | Tâches longues : parsing CSV, enrichissement Discogs, pochettes, paroles | Node 20 + BullMQ |
+| `frontend` | Interface web (SPA), sert aussi `/media` (pochettes) en production | React + Vite + Tailwind, servie par nginx |
+| `backend`  | API REST : auth (JWT), bibliothèque/recherche, ajout & recherche Discogs en direct, sauvegarde JSON, clés API, mise à jour ; applique les migrations Prisma au démarrage et **met en file** les tâches longues | Node 20 + Fastify + Prisma + Zod |
+| `worker`   | Consomme les files : imports (CSV **et** collection Discogs via l'API), enrichissement Discogs (fiches + master pour l'année originale + toutes les images), paroles & anecdotes Genius (traduites), origines/membres MusicBrainz | Node 20 + BullMQ |
 | `db`       | Base de données principale                                 | PostgreSQL 16 |
-| `redis`    | File d'attente + cache                                     | Redis 7 |
+| `redis`    | Files d'attente BullMQ                                     | Redis 7 |
+| `updater`  | Mise à jour intégrée : surveille la demande déposée par l'API, puis `git pull` + rebuild + redémarrage de `backend`/`worker`/`frontend` (jamais la base, jamais lui-même) | docker CLI + compose + git |
 
-Le backend et le worker partagent une seule image (même code, deux points d'entrée). Le worker
-traite quatre files BullMQ : `import` (parsing CSV), `enrich` (Discogs, *rate-limité*), `lyrics`
-(paroles + anecdotes Genius, séparée pour ne pas ralentir l'enrichissement) et `musicbrainz`
-(origines et membres de groupes, 1 req/s).
+**Le backend et le worker partagent une seule image et un seul code** (`backend/`), seuls les
+points d'entrée diffèrent (`server.ts` / `worker.ts`) : l'API ne fait jamais d'appel long
+elle-même, elle met en file ; le worker fait tout le travail externe. Quatre files BullMQ :
+
+- **`import`** — parsing de l'export CSV, ou récupération paginée de la collection via l'API
+  Discogs (identifiant/jeton du profil) ; dédoublonnage par identifiant Discogs dans les deux cas.
+- **`enrich`** — un job par disque : fiche Discogs complète + master (année de sortie originale),
+  téléchargement de **toutes** les images, crédits par piste, etc. *Rate-limitée* pour rester
+  sous les quotas Discogs (60 req/min avec jeton, 25 sans).
+- **`lyrics`** — paroles piste par piste + anecdote d'album via Genius (traduite en français),
+  séparée pour ne jamais ralentir l'enrichissement ; en cas de quota épuisé la file **se met en
+  pause et reprend seule**, sans rien perdre.
+- **`musicbrainz`** — origine des artistes et membres des groupes, plafonnée à ~1 req/s
+  (la limite publique de MusicBrainz).
+
+Les statuts (`enrichmentStatus`, dates des derniers passages Discogs/Genius) vivent en base : un
+redémarrage en plein travail reprend où il en était, et le ré-enrichissement sélectif ne refait
+que ce qui manque.
 
 ## 🚀 Installation
 
