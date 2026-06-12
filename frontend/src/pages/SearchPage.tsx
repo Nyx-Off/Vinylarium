@@ -20,6 +20,19 @@ const FLAG_FILTERS: { key: keyof ReleaseFilters; label: string }[] = [
   { key: 'hidden', label: 'Masqués' },
 ];
 
+// "Sans année", "sans pochette"… — releases missing a piece of information.
+const MISSING_FILTERS: { key: string; label: string }[] = [
+  { key: 'year', label: 'Sans année' },
+  { key: 'cover', label: 'Sans pochette' },
+  { key: 'lyrics', label: 'Sans paroles' },
+  { key: 'country', label: 'Sans pays' },
+  { key: 'genre', label: 'Sans genre' },
+  { key: 'storage', label: 'Sans rangement' },
+  { key: 'rating', label: 'Sans note' },
+  { key: 'credits', label: 'Sans crédits' },
+  { key: 'tracklist', label: 'Sans tracklist' },
+];
+
 const STRING_KEYS = [
   'q',
   'artistId',
@@ -32,6 +45,7 @@ const STRING_KEYS = [
   'tag',
   'format',
   'storageLocationId',
+  'missing',
 ] as const;
 const FLAG_KEYS = ['live', 'studio', 'compilation', 'special', 'reissue', 'remaster', 'hidden'] as const;
 
@@ -160,6 +174,30 @@ export default function SearchPage() {
               </option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className="label">Données manquantes</label>
+          <div className="flex flex-wrap gap-1.5">
+            {MISSING_FILTERS.map((m) => {
+              const selected = (filters.missing ?? '').split(',').filter(Boolean);
+              const active = selected.includes(m.key);
+              return (
+                <button
+                  key={m.key}
+                  onClick={() => {
+                    const next = active
+                      ? selected.filter((k) => k !== m.key)
+                      : [...selected, m.key];
+                    set('missing', next.length ? next.join(',') : undefined);
+                  }}
+                  className={`chip ${active ? 'chip-active' : ''}`}
+                >
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div>

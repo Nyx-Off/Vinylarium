@@ -40,6 +40,9 @@ export const releaseQuerySchema = z.object({
   // (search), `hidden` shows ONLY them (management view).
   hidden: boolish,
   includeHidden: boolish,
+  // "Missing data" filters, comma-separated ("year,cover") — releases
+  // lacking that information; unknown keys are ignored.
+  missing: z.string().optional(),
   sort: z
     .enum([
       'addedDesc',
@@ -58,6 +61,22 @@ export const releaseQuerySchema = z.object({
 });
 
 export type ReleaseQuery = z.infer<typeof releaseQuerySchema>;
+
+/** What "this release lacks X" means, per missing-data key. */
+const MISSING_WHERE: Record<string, Prisma.ReleaseWhereInput> = {
+  year: { year: null },
+  // No downloaded cover AND no remote thumbnail to fall back on.
+  cover: { coverPath: null, thumbUrl: null },
+  lyrics: { lyrics: { none: {} } },
+  country: { country: null },
+  genre: { genres: { none: {} } },
+  storage: { storageLocationId: null },
+  rating: { rating: null },
+  credits: { credits: { none: {} } },
+  tracklist: { tracks: { none: {} } },
+};
+
+export const MISSING_KEYS = Object.keys(MISSING_WHERE);
 
 /** Build a Prisma `where` from validated query params. */
 export function buildReleaseWhere(qp: ReleaseQuery): Prisma.ReleaseWhereInput {
@@ -94,6 +113,13 @@ export function buildReleaseWhere(qp: ReleaseQuery): Prisma.ReleaseWhereInput {
 
   if (qp.hidden) and.push({ hidden: true });
   else if (!qp.includeHidden) and.push({ hidden: false });
+
+  if (qp.missing) {
+    for (const key of qp.missing.split(',')) {
+      const w = MISSING_WHERE[key.trim()];
+      if (w) and.push(w);
+    }
+  }
 
   if (qp.live) and.push({ isLive: true });
   if (qp.studio) and.push({ isStudio: true });
