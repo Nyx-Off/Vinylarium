@@ -4,14 +4,14 @@ import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { Me } from '../api/types';
 
-// L'import Discogs et la sauvegarde vivent dans Paramètres (profil), pas ici.
+// L'ajout de disques (recherche Discogs), l'import et la sauvegarde vivent
+// dans Paramètres (profil), pas dans la navigation.
 const NAV = [
   { to: '/library', label: 'Bibliothèque' },
   { to: '/search', label: 'Recherche' },
   { to: '/storage', label: 'Rangement' },
   { to: '/map', label: 'Carte' },
   { to: '/timeline', label: 'Frise' },
-  { to: '/add', label: 'Ajouter' },
 ];
 
 // Mobile bottom bar: the four everyday destinations as tabs, the rest behind
@@ -25,7 +25,6 @@ const TABS = [
 ];
 const MORE = [
   { to: '/storage', label: 'Rangement', icon: '📦' },
-  { to: '/add', label: 'Ajouter un disque', icon: '➕' },
   { to: '/settings', label: 'Paramètres', icon: '⚙️' },
 ];
 

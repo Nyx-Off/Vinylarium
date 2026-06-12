@@ -29,6 +29,26 @@ export async function importRoutes(app: FastifyInstance) {
     return job;
   });
 
+  // Pull the user's Discogs collection straight through the API — no CSV.
+  // Uses the Discogs username/token saved on the profile.
+  app.post('/discogs-sync', async (req) => {
+    const me = await prisma.user.findUnique({ where: { id: req.user.sub } });
+    if (!me?.discogsUsername) {
+      throw badRequest(
+        'Renseignez d’abord votre identifiant Discogs dans Paramètres → Profil',
+      );
+    }
+    const job = await prisma.importJob.create({
+      data: {
+        filename: `discogs:${me.discogsUsername}`,
+        userId: me.id,
+        status: 'PENDING',
+      },
+    });
+    await importQueue.add('discogs-sync', { importJobId: job.id });
+    return job;
+  });
+
   // Recent import jobs.
   app.get('/', async () => {
     const jobs = await prisma.importJob.findMany({ orderBy: { createdAt: 'desc' }, take: 50 });

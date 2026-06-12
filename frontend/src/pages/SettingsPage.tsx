@@ -1,10 +1,16 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, errorMessage } from '../api/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { useStats, useIntegrations, useReenrichStatus, useSystemVersion } from '../api/hooks';
+import {
+  useStats,
+  useIntegrations,
+  useReenrichStatus,
+  useSystemVersion,
+  useImportJob,
+} from '../api/hooks';
 import { useAuth } from '../lib/auth';
-import { Integration, UpdateStatus } from '../api/types';
+import { Integration, ImportJob, UpdateStatus } from '../api/types';
 
 export default function SettingsPage() {
   const { user, refresh } = useAuth();
@@ -25,11 +31,66 @@ export default function SettingsPage() {
       setMsg(errorMessage(e));
     }
   }
+
+  const [missingMsg, setMissingMsg] = useState('');
+  async function reenrichMissing(what: 'discogs' | 'genius') {
+    setMissingMsg('');
+    try {
+      const { data } = await api.post<{ queued: number }>('/releases/reenrich-missing', { what });
+      setMissingMsg(
+        data.queued > 0
+          ? `${data.queued} disque(s) mis en file (${what === 'discogs' ? 'Discogs' : 'Genius'}). En cas de quota épuisé, la file se met en pause et reprend toute seule.`
+          : 'Rien à compléter — tout est déjà passé.',
+      );
+      qc.invalidateQueries({ queryKey: ['reenrich-status'] });
+    } catch (e) {
+      setMissingMsg(errorMessage(e));
+    }
+  }
+  async function stopLyrics() {
+    try {
+      await api.post('/releases/reenrich-all/stop', { queue: 'lyrics' });
+      qc.invalidateQueries({ queryKey: ['reenrich-status'] });
+    } catch (e) {
+      setMissingMsg(errorMessage(e));
+    }
+  }
+
   const avatarRef = useRef<HTMLInputElement>(null);
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [password, setPassword] = useState('');
+  const [discogsUsername, setDiscogsUsername] = useState(user?.discogsUsername ?? '');
+  const [discogsToken, setDiscogsToken] = useState(user?.discogsToken ?? '');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Discogs collection sync (API, no CSV): launch then poll the ImportJob.
+  const [syncJobId, setSyncJobId] = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState('');
+  const { data: syncJob } = useImportJob(
+    syncJobId ?? undefined,
+    !!syncJobId,
+  );
+  const syncRunning = !!syncJobId && syncJob?.status !== 'COMPLETED' && syncJob?.status !== 'FAILED';
+
+  // New discs land in the library as the sync goes — refresh it at the end.
+  useEffect(() => {
+    if (syncJob?.status === 'COMPLETED') {
+      qc.invalidateQueries({ queryKey: ['releases'] });
+      qc.invalidateQueries({ queryKey: ['stats'] });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncJob?.status]);
+
+  async function syncDiscogs() {
+    setSyncMsg('');
+    try {
+      const { data } = await api.post<ImportJob>('/import/discogs-sync');
+      setSyncJobId(data.id);
+    } catch (e) {
+      setSyncMsg(errorMessage(e));
+    }
+  }
 
   const backupRef = useRef<HTMLInputElement>(null);
   const [backupMsg, setBackupMsg] = useState('');
@@ -152,6 +213,8 @@ export default function SettingsPage() {
       await api.patch(`/users/${user.id}`, {
         displayName: displayName || undefined,
         ...(password ? { password } : {}),
+        discogsUsername: discogsUsername.trim() || null,
+        discogsToken: discogsToken.trim() || null,
       });
       const file = avatarRef.current?.files?.[0];
       if (file) {
@@ -192,6 +255,26 @@ export default function SettingsPage() {
         <div>
           <label className="label">Photo de profil</label>
           <input ref={avatarRef} type="file" accept="image/*" className="text-sm" />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label">Identifiant Discogs</label>
+            <input
+              className="input"
+              value={discogsUsername}
+              onChange={(e) => setDiscogsUsername(e.target.value)}
+              placeholder="mon-pseudo-discogs"
+            />
+          </div>
+          <div>
+            <label className="label">Jeton API Discogs (collection privée)</label>
+            <input
+              className="input"
+              value={discogsToken}
+              onChange={(e) => setDiscogsToken(e.target.value)}
+              placeholder="discogs.com/settings/developers"
+            />
+          </div>
         </div>
         {msg && <p className="text-sm text-accent">{msg}</p>}
         <button onClick={saveProfile} disabled={busy} className="btn-primary">
@@ -251,19 +334,88 @@ export default function SettingsPage() {
             </span>
           )}
         </div>
+        <div className="rounded-xl bg-ink/5 px-4 py-3">
+          <p className="font-semibold">Compléter seulement les manquants</p>
+          <p className="mb-3 text-xs text-mocha">
+            Ne traite que les disques jamais enrichis (la date du dernier passage est mémorisée).
+            Si le quota d'une API est épuisé, la file se met en pause et reprend automatiquement là
+            où elle en était.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => reenrichMissing('discogs')}
+              disabled={!reenrich || reenrich.missingDiscogs === 0}
+              className="btn-outline"
+            >
+              💿 Discogs{reenrich ? ` (${reenrich.missingDiscogs})` : ''}
+            </button>
+            <button
+              onClick={() => reenrichMissing('genius')}
+              disabled={!reenrich || reenrich.missingGenius === 0}
+              className="btn-outline"
+            >
+              📝 Paroles Genius{reenrich ? ` (${reenrich.missingGenius})` : ''}
+            </button>
+            {reenrich?.lyrics.inProgress && (
+              <span className="text-sm text-mocha">
+                Paroles : {reenrich.lyrics.waiting} en attente, {reenrich.lyrics.active} en cours{' '}
+                <button onClick={stopLyrics} className="text-accent underline-offset-2 hover:underline">
+                  arrêter
+                </button>
+              </span>
+            )}
+          </div>
+          {missingMsg && <p className="mt-2 text-sm text-accent">{missingMsg}</p>}
+        </div>
       </section>
 
       <section className="card space-y-3 p-6">
-        <h2 className="font-display text-xl font-bold text-ink">Import & sauvegarde</h2>
+        <h2 className="font-display text-xl font-bold text-ink">Ajout & sauvegarde</h2>
+        <div className="rounded-xl bg-ink/5 px-4 py-3">
+          <p className="font-semibold">Récupérer ma collection Discogs</p>
+          <p className="mb-3 text-xs text-mocha">
+            Va chercher vos disques directement via l'API Discogs (identifiant — et jeton pour une
+            collection privée — à renseigner dans le profil ci-dessus). Les disques déjà présents
+            sont ignorés, les nouveaux sont enrichis automatiquement.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={syncDiscogs} disabled={syncRunning} className="btn-primary">
+              {syncRunning ? '⏳ Récupération…' : '🔄 Récupérer ma collection'}
+            </button>
+            {syncJob && (
+              <span className="text-sm text-mocha">
+                {syncJob.status === 'COMPLETED'
+                  ? `Terminé : ${syncJob.importedCount} ajouté(s), ${syncJob.skippedCount} déjà présent(s).`
+                  : syncJob.status === 'FAILED'
+                    ? `Échec : ${syncJob.error ?? 'erreur inconnue'}`
+                    : `${syncJob.processedRows}${syncJob.totalRows ? ` / ${syncJob.totalRows}` : ''} disque(s) parcourus…`}
+              </span>
+            )}
+          </div>
+          {syncMsg && <p className="mt-2 text-sm text-accent">{syncMsg}</p>}
+        </div>
         <div className="rounded-xl bg-ink/5 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="font-semibold">Import Discogs</p>
+              <p className="font-semibold">Ajouter un disque</p>
+              <p className="text-xs text-mocha">
+                Recherche en direct sur Discogs (nom, artiste, code-barres, n° de catalogue).
+              </p>
+            </div>
+            <Link to="/add" className="btn-outline">
+              ＋ Ajouter
+            </Link>
+          </div>
+        </div>
+        <div className="rounded-xl bg-ink/5 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-semibold">Import Discogs (CSV)</p>
               <p className="text-xs text-mocha">
                 Déposez l'export CSV de votre collection Discogs — création + enrichissement.
               </p>
             </div>
-            <Link to="/import" className="btn-primary">
+            <Link to="/import" className="btn-outline">
               📥 Ouvrir l'import
             </Link>
           </div>

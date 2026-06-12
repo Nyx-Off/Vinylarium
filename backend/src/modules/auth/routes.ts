@@ -69,6 +69,14 @@ export async function authRoutes(app: FastifyInstance) {
   app.get('/me', { preHandler: app.authenticate }, async (req) => {
     const user = await prisma.user.findUnique({ where: { id: req.user.sub } });
     if (!user) throw unauthorized();
-    return { user: { ...publicUser(user), preferences: user.preferences } };
+    return {
+      user: {
+        ...publicUser(user),
+        preferences: user.preferences,
+        // Own Discogs credentials — only ever returned to the user themself.
+        discogsUsername: user.discogsUsername,
+        discogsToken: user.discogsToken,
+      },
+    };
   });
 }

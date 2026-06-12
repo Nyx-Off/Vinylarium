@@ -1,8 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useFacets, useReleases, ReleaseFilters } from '../api/hooks';
 import { ReleaseCard } from '../components/ReleaseCard';
 import { Spinner } from '../components/Spinner';
+import {
+  ALLOWED_PAGE_SIZES,
+  DEFAULT_PAGE_SIZE,
+  PageSizeSelect,
+  Pagination,
+} from '../components/Pagination';
 
 const FLAG_FILTERS: { key: keyof ReleaseFilters; label: string }[] = [
   { key: 'live', label: 'Live' },
@@ -11,40 +17,74 @@ const FLAG_FILTERS: { key: keyof ReleaseFilters; label: string }[] = [
   { key: 'special', label: 'Édition spéciale' },
   { key: 'reissue', label: 'Réédition' },
   { key: 'remaster', label: 'Remaster' },
+  { key: 'hidden', label: 'Masqués' },
 ];
 
+const STRING_KEYS = [
+  'q',
+  'artistId',
+  'role',
+  'genre',
+  'style',
+  'label',
+  'country',
+  'origin',
+  'tag',
+  'format',
+  'storageLocationId',
+] as const;
+const FLAG_KEYS = ['live', 'studio', 'compilation', 'special', 'reissue', 'remaster', 'hidden'] as const;
+
 export default function SearchPage() {
+  // The whole search state lives in the URL: the back button restores the
+  // exact page/filters, and a search can be shared as a link.
   const [params, setParams] = useSearchParams();
+
+  const filters = useMemo<ReleaseFilters>(() => {
+    const f: ReleaseFilters = {
+      sort: params.get('sort') ?? 'addedDesc',
+      page: Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1),
+    };
+    const sizeParam = parseInt(params.get('pageSize') ?? '', 10);
+    f.pageSize = ALLOWED_PAGE_SIZES.includes(sizeParam) ? sizeParam : DEFAULT_PAGE_SIZE;
+    for (const k of STRING_KEYS) {
+      const v = params.get(k);
+      if (v) f[k] = v;
+    }
+    const decade = params.get('decade');
+    if (decade) f.decade = Number(decade);
+    for (const k of FLAG_KEYS) {
+      if (params.get(k)) f[k] = true;
+    }
+    return f;
+  }, [params]);
+
+  // Hidden releases stay searchable: they are mixed into every search result
+  // (the library alone excludes them); the "Masqués" chip narrows to them.
+  const { data, isLoading, isFetching } = useReleases({ ...filters, includeHidden: true });
   const { data: facets } = useFacets();
 
-  const initial = useMemo<ReleaseFilters>(
-    () => ({
-      q: params.get('q') || undefined,
-      artistId: params.get('artistId') || undefined,
-      role: params.get('role') || undefined,
-      genre: params.get('genre') || undefined,
-      style: params.get('style') || undefined,
-      country: params.get('country') || undefined,
-      origin: params.get('origin') || undefined,
-      label: params.get('label') || undefined,
-      tag: params.get('tag') || undefined,
-      decade: params.get('decade') ? Number(params.get('decade')) : undefined,
-      storageLocationId: params.get('storageLocationId') || undefined,
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
+  function patch(changes: Record<string, string | null>, resetPage = true) {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (resetPage) next.delete('page');
+        for (const [k, v] of Object.entries(changes)) {
+          if (v === null || v === '') next.delete(k);
+          else next.set(k, v);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }
 
-  const [filters, setFilters] = useState<ReleaseFilters>({ ...initial, sort: 'addedDesc', page: 1, pageSize: 60 });
-  const { data, isLoading, isFetching } = useReleases(filters);
-
-  function set<K extends keyof ReleaseFilters>(key: K, value: ReleaseFilters[K]) {
-    setFilters((f) => ({ ...f, [key]: value || undefined, page: 1 }));
+  function set(key: string, value: string | undefined) {
+    patch({ [key]: value ?? null });
   }
 
   function reset() {
-    setFilters({ sort: 'addedDesc', page: 1, pageSize: 60 });
-    setParams({});
+    setParams({}, { replace: true });
   }
 
   const activeCount = Object.entries(filters).filter(
@@ -69,7 +109,7 @@ export default function SearchPage() {
           <input
             className="input"
             placeholder="titre, artiste, note…"
-            defaultValue={filters.q ?? ''}
+            value={filters.q ?? ''}
             onChange={(e) => set('q', e.target.value)}
           />
         </div>
@@ -90,6 +130,12 @@ export default function SearchPage() {
 
         <FacetSelect label="Genre" value={filters.genre} options={facets?.genres} onChange={(v) => set('genre', v)} />
         <FacetSelect label="Style" value={filters.style} options={facets?.styles} onChange={(v) => set('style', v)} />
+        <FacetSelect
+          label="Format (33/45, LP/EP…)"
+          value={filters.format}
+          options={facets?.formats}
+          onChange={(v) => set('format', v)}
+        />
         <FacetSelect label="Label" value={filters.label} options={facets?.labels} onChange={(v) => set('label', v)} />
         <FacetSelect label="Pays" value={filters.country} options={facets?.countries} onChange={(v) => set('country', v)} />
         <FacetSelect
@@ -105,7 +151,7 @@ export default function SearchPage() {
           <select
             className="input"
             value={filters.decade ?? ''}
-            onChange={(e) => set('decade', e.target.value ? Number(e.target.value) : undefined)}
+            onChange={(e) => set('decade', e.target.value || undefined)}
           >
             <option value="">Toutes</option>
             {(facets?.decades ?? []).map((d) => (
@@ -122,7 +168,7 @@ export default function SearchPage() {
             {FLAG_FILTERS.map((f) => (
               <button
                 key={f.key}
-                onClick={() => set(f.key, (!filters[f.key] || undefined) as never)}
+                onClick={() => set(f.key, filters[f.key] ? undefined : '1')}
                 className={`chip ${filters[f.key] ? 'chip-active' : ''}`}
               >
                 {f.label}
@@ -134,22 +180,30 @@ export default function SearchPage() {
 
       {/* Results */}
       <div>
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-mocha">
             {data ? `${data.total} résultat${data.total > 1 ? 's' : ''}` : '…'}
             {isFetching && ' · …'}
           </p>
-          <select
-            className="input w-40"
-            value={filters.sort}
-            onChange={(e) => setFilters((f) => ({ ...f, sort: e.target.value, page: 1 }))}
-          >
-            <option value="addedDesc">Ajout récent</option>
-            <option value="title">Titre A→Z</option>
-            <option value="artist">Artiste A→Z</option>
-            <option value="yearAsc">Année ↑</option>
-            <option value="yearDesc">Année ↓</option>
-          </select>
+          <div className="flex items-center gap-2">
+            <PageSizeSelect
+              value={filters.pageSize ?? DEFAULT_PAGE_SIZE}
+              onChange={(n) => patch({ pageSize: String(n) })}
+            />
+            <select
+              className="input w-40"
+              value={filters.sort}
+              onChange={(e) => patch({ sort: e.target.value })}
+            >
+              <option value="addedDesc">Ajout récent</option>
+              <option value="title">Titre A→Z</option>
+              <option value="titleDesc">Titre Z→A</option>
+              <option value="artist">Artiste A→Z</option>
+              <option value="artistDesc">Artiste Z→A</option>
+              <option value="yearAsc">Année ↑</option>
+              <option value="yearDesc">Année ↓</option>
+            </select>
+          </div>
         </div>
 
         {isLoading ? (
@@ -161,27 +215,14 @@ export default function SearchPage() {
                 <ReleaseCard key={r.id} r={r} />
               ))}
             </div>
-            {data.pageCount > 1 && (
-              <div className="mt-8 flex items-center justify-center gap-4">
-                <button
-                  className="btn-outline"
-                  disabled={(filters.page ?? 1) <= 1}
-                  onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) - 1 }))}
-                >
-                  ← Précédent
-                </button>
-                <span className="text-sm text-mocha">
-                  {data.page} / {data.pageCount}
-                </span>
-                <button
-                  className="btn-outline"
-                  disabled={(filters.page ?? 1) >= data.pageCount}
-                  onClick={() => setFilters((f) => ({ ...f, page: (f.page ?? 1) + 1 }))}
-                >
-                  Suivant →
-                </button>
-              </div>
-            )}
+            <Pagination
+              page={data.page}
+              pageCount={data.pageCount}
+              onPage={(p) => {
+                patch({ page: p <= 1 ? null : String(p) }, false);
+                window.scrollTo({ top: 0 });
+              }}
+            />
           </>
         ) : (
           <p className="py-16 text-center text-mocha">Aucun disque ne correspond à ces critères.</p>

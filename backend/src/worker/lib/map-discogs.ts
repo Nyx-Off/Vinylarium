@@ -26,14 +26,23 @@ async function getArtist(entry: any) {
  * Idempotent: Discogs-derived children are cleared and rebuilt, while
  * user-owned data (tags, lyrics, anecdotes, storage assignment) is preserved.
  */
-export async function applyDiscogsRelease(releaseId: string, data: any): Promise<void> {
+export async function applyDiscogsRelease(
+  releaseId: string,
+  data: any,
+  masterYear: number | null = null,
+): Promise<void> {
   const formats: any[] = Array.isArray(data.formats) ? data.formats : [];
   const descriptions: string[] = formats.flatMap((f) =>
     Array.isArray(f.descriptions) ? f.descriptions : [],
   );
   const styles: string[] = Array.isArray(data.styles) ? data.styles : [];
   const flags = deriveVersionFlags(descriptions, styles);
-  const year = typeof data.year === 'number' && data.year > 0 ? data.year : parseYear(data.released);
+  // The Discogs release year is the year of THIS pressing; the music's
+  // original year comes from the master. `Release.year` (what the whole app
+  // sorts/filters/displays on) is the original one.
+  const pressingYear =
+    typeof data.year === 'number' && data.year > 0 ? data.year : parseYear(data.released);
+  const year = masterYear ?? pressingYear;
   const masterId = data.master_id && data.master_id > 0 ? data.master_id : null;
 
   await prisma.release.update({
@@ -42,6 +51,7 @@ export async function applyDiscogsRelease(releaseId: string, data: any): Promise
       title: data.title || undefined,
       sortTitle: data.title ? sortName(data.title) : undefined,
       year: year ?? undefined,
+      pressingYear: pressingYear ?? undefined,
       decade: deriveDecade(year ?? null),
       releasedRaw: data.released || undefined,
       releasedFormatted: data.released_formatted || undefined,

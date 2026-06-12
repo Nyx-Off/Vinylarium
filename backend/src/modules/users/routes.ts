@@ -32,6 +32,9 @@ export async function userRoutes(app: FastifyInstance) {
         // password: a string sets it, null removes it.
         password: z.string().min(1).max(200).nullable().optional(),
         preferences: z.record(z.any()).optional(),
+        // Per-user Discogs credentials (collection sync); '' or null clears.
+        discogsUsername: z.string().trim().max(100).nullable().optional(),
+        discogsToken: z.string().trim().max(200).nullable().optional(),
       })
       .parse(req.body);
 
@@ -41,9 +44,18 @@ export async function userRoutes(app: FastifyInstance) {
       data.passwordHash = body.password === null ? null : await hashPassword(body.password);
     }
     if (body.preferences !== undefined) data.preferences = body.preferences;
+    if (body.discogsUsername !== undefined) data.discogsUsername = body.discogsUsername || null;
+    if (body.discogsToken !== undefined) data.discogsToken = body.discogsToken || null;
 
     const user = await prisma.user.update({ where: { id }, data });
-    return { user: { ...publicUser(user), preferences: user.preferences } };
+    return {
+      user: {
+        ...publicUser(user),
+        preferences: user.preferences,
+        discogsUsername: user.discogsUsername,
+        discogsToken: user.discogsToken,
+      },
+    };
   });
 
   // Avatar upload (self or admin).

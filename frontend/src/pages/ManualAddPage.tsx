@@ -1,7 +1,207 @@
-import { FormEvent, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { FormEvent, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { api, errorMessage } from '../api/client';
 import { useStorageLocations } from '../api/hooks';
+import { DiscogsSearchResult } from '../api/types';
+
+const MODES = [
+  { value: 'all', label: 'Tout' },
+  { value: 'artist', label: 'Artiste / groupe' },
+  { value: 'barcode', label: 'Code-barres' },
+  { value: 'catno', label: 'N° catalogue' },
+] as const;
+type Mode = (typeof MODES)[number]['value'];
+
+/** Search-as-you-type on the Discogs database; pick a result to add it. */
+function DiscogsSearch() {
+  const navigate = useNavigate();
+  const { data: locations } = useStorageLocations();
+  const [q, setQ] = useState('');
+  const [mode, setMode] = useState<Mode>('all');
+  const [debounced, setDebounced] = useState('');
+  const [picked, setPicked] = useState<DiscogsSearchResult | null>(null);
+  const [storageLocationId, setStorageLocationId] = useState('');
+  const [storageSlot, setStorageSlot] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(q.trim()), 450);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['discogs-search', debounced, mode],
+    enabled: debounced.length >= 3,
+    staleTime: 5 * 60_000,
+    retry: false,
+    queryFn: async () =>
+      (
+        await api.get<{ results: DiscogsSearchResult[] }>('/releases/discogs-search', {
+          params: { q: debounced, mode },
+        })
+      ).data.results,
+  });
+
+  async function add() {
+    if (!picked) return;
+    setBusy(true);
+    setError('');
+    try {
+      const { data: res } = await api.post<{ id: string; existing: boolean }>(
+        '/releases/from-discogs',
+        {
+          discogsId: picked.id,
+          title: picked.title,
+          year: picked.year,
+          country: picked.country,
+          catalogNumber: picked.catno,
+          thumb: picked.thumb,
+          storageLocationId: storageLocationId || undefined,
+          storageSlot: storageSlot || undefined,
+        },
+      );
+      navigate(`/release/${res.id}`);
+    } catch (e) {
+      setError(errorMessage(e));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="card space-y-4 p-6">
+      <div>
+        <label className="label">Rechercher sur Discogs</label>
+        <input
+          className="input"
+          autoFocus
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setPicked(null);
+          }}
+          placeholder={
+            mode === 'barcode'
+              ? '3 700368 446268…'
+              : mode === 'catno'
+                ? 'SMAS-2653…'
+                : 'Pink Floyd Wish You Were Here…'
+          }
+        />
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {MODES.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              onClick={() => setMode(m.value)}
+              className={`chip ${mode === m.value ? 'bg-accent text-cream' : 'hover:bg-ink/10'}`}
+            >
+              {m.label}
+            </button>
+          ))}
+          {isFetching && <span className="self-center text-xs text-mocha">recherche…</span>}
+        </div>
+      </div>
+
+      {debounced.length >= 3 && data && data.length === 0 && !isFetching && (
+        <p className="text-sm text-mocha">Aucun résultat — essayez un autre mode de recherche.</p>
+      )}
+
+      {data && data.length > 0 && (
+        <ul className="divide-y divide-ink/5 overflow-hidden rounded-xl ring-1 ring-ink/10">
+          {data.map((r) => {
+            const isPicked = picked?.id === r.id;
+            return (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  onClick={() => setPicked(isPicked ? null : r)}
+                  disabled={!!r.existingId}
+                  className={`flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                    isPicked ? 'bg-accent/10' : r.existingId ? 'opacity-60' : 'hover:bg-ink/5'
+                  }`}
+                >
+                  <span className="h-12 w-12 shrink-0 overflow-hidden rounded bg-ink/10">
+                    {r.thumb && (
+                      <img
+                        src={r.thumb}
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                        onError={(e) => ((e.target as HTMLImageElement).style.display = 'none')}
+                      />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="line-clamp-1 font-medium">{r.title}</span>
+                    <span className="line-clamp-1 text-xs text-mocha">
+                      {[r.year, r.country, r.formats.join(', '), r.labels.join(', '), r.catno]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </span>
+                  {r.existingId ? (
+                    <Link
+                      to={`/release/${r.existingId}`}
+                      className="chip shrink-0 hover:bg-ink/10"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Déjà là — voir
+                    </Link>
+                  ) : (
+                    <span className={`chip shrink-0 ${isPicked ? 'bg-accent text-cream' : ''}`}>
+                      {isPicked ? '✓ Choisi' : 'Choisir'}
+                    </span>
+                  )}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {picked && (
+        <div className="space-y-3 rounded-xl bg-ink/5 p-4">
+          <p className="text-sm">
+            <span className="font-semibold">{picked.title}</span>
+            <span className="text-mocha"> — sera enrichi automatiquement (pochettes, crédits, tracklist, paroles).</span>
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="label">Emplacement</label>
+              <select
+                className="input"
+                value={storageLocationId}
+                onChange={(e) => setStorageLocationId(e.target.value)}
+              >
+                <option value="">— Aucun —</option>
+                {(locations ?? []).map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Position / case</label>
+              <input
+                className="input"
+                value={storageSlot}
+                onChange={(e) => setStorageSlot(e.target.value)}
+                placeholder="B-12"
+              />
+            </div>
+          </div>
+          {error && <p className="text-sm text-accent">{error}</p>}
+          <button type="button" onClick={add} disabled={busy} className="btn-primary">
+            {busy ? 'Ajout…' : '＋ Ajouter à la collection'}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
 
 function splitList(s: string): string[] {
   return s
@@ -22,6 +222,30 @@ function parseLines(s: string): { a: string; b: string; c?: string }[] {
 }
 
 export default function ManualAddPage() {
+  const [manual, setManual] = useState(false);
+  return (
+    <div className="mx-auto max-w-3xl space-y-5">
+      <div>
+        <h1 className="font-display text-3xl font-bold">Ajouter un disque</h1>
+        <p className="text-sm text-mocha">
+          Cherchez sur Discogs (nom, artiste, code-barres, n° de catalogue), choisissez la bonne
+          édition — le reste (pochettes, crédits, tracklist, paroles) arrive tout seul.
+        </p>
+      </div>
+      <DiscogsSearch />
+      <button
+        type="button"
+        onClick={() => setManual((m) => !m)}
+        className="text-sm font-medium text-mocha underline-offset-2 hover:underline"
+      >
+        {manual ? '▾ Masquer la saisie manuelle' : '▸ Pas sur Discogs ? Saisie manuelle'}
+      </button>
+      {manual && <ManualForm />}
+    </div>
+  );
+}
+
+function ManualForm() {
   const navigate = useNavigate();
   const { data: locations } = useStorageLocations();
   const coverRef = useRef<HTMLInputElement>(null);
@@ -103,10 +327,7 @@ export default function ManualAddPage() {
   }
 
   return (
-    <form onSubmit={submit} className="mx-auto max-w-3xl space-y-5">
-      <h1 className="font-display text-3xl font-bold">Ajouter un disque</h1>
-      <p className="text-sm text-mocha">Pour les disques absents de Discogs ou les pièces particulières.</p>
-
+    <form onSubmit={submit} className="space-y-5">
       <div className="card grid gap-4 p-6 sm:grid-cols-2">
         <Field label="Titre *">
           <input className="input" required value={f.title} onChange={(e) => upd('title', e.target.value)} />

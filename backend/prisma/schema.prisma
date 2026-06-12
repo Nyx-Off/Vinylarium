@@ -109,6 +109,10 @@ model User {
   isAdmin      Boolean  @default(false)
   // Free-form UI preferences (default view, theme, page size, ...).
   preferences  Json     @default("{}")
+  // Per-user Discogs credentials, used to pull the user's own collection
+  // through the Discogs API (Settings → "Récupérer ma collection").
+  discogsUsername String?
+  discogsToken    String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -128,7 +132,11 @@ model Release {
   source           ReleaseSource    @default(DISCOGS)
   enrichmentStatus EnrichmentStatus @default(PENDING)
   enrichmentError  String?
-  enrichedAt       DateTime?
+  enrichedAt       DateTime? // last SUCCESSFUL Discogs enrichment
+  lyricsFetchedAt  DateTime? // last successful Genius lyrics+anecdote pass
+
+  // Hidden from the library grids/bins, but still searchable & linkable.
+  hidden Boolean @default(false)
 
   // Discogs identifiers
   discogsReleaseId Int?    @unique
@@ -139,7 +147,10 @@ model Release {
   title         String
   sortTitle     String? // lower/normalised for ordering
   artistDisplay String // denormalised "Artist" string ("Miles Davis", "Various", ...)
+  // `year` is the ORIGINAL release year of the music (Discogs master year when
+  // available); the year of THIS pressing lives in `pressingYear`.
   year          Int?
+  pressingYear  Int?
   decade        Int? // year rounded down to the decade, for faceting
   releasedRaw       String? // "1959", "1959-08-17", "1987-07-00" (raw, keep as-is)
   releasedFormatted String? // "Jul 1987" (human-readable, from Discogs)
@@ -199,6 +210,7 @@ model Release {
   identifiers  Identifier[]
 
   @@index([year])
+  @@index([hidden])
   @@index([decade])
   @@index([country])
   @@index([sortTitle])

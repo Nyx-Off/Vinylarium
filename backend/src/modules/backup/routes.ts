@@ -42,6 +42,7 @@ const backupReleaseSchema = z.object({
   isSpecialEdition: z.boolean().optional(),
   storageLocationLabel: z.string().nullish(),
   storageSlot: z.string().nullish(),
+  hidden: z.boolean().optional(),
   tags: z.array(z.string()).default([]),
   manualLyrics: z
     .array(
@@ -143,6 +144,7 @@ export async function backupRoutes(app: FastifyInstance) {
         isSpecialEdition: r.isSpecialEdition,
         storageLocationLabel: r.storageLocation?.label ?? null,
         storageSlot: r.storageSlot,
+        hidden: r.hidden,
         tags: r.tags.map((t) => t.tag.name),
         manualLyrics: r.lyrics.map((l) => ({
           trackTitle: l.track?.title ?? null,
@@ -242,6 +244,7 @@ export async function backupRoutes(app: FastifyInstance) {
           ? locByLabel.get(r.storageLocationLabel)
           : undefined,
         storageSlot: r.storageSlot ?? undefined,
+        hidden: r.hidden ?? undefined,
       };
 
       let release;

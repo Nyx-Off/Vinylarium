@@ -29,10 +29,18 @@ export async function processLyrics(releaseId: string): Promise<void> {
     if (e instanceof GeniusRateLimitError) throw e;
   });
 
+  // From here on the pass is considered done once it completes — date it so
+  // "re-enrich missing only" knows this release doesn't need another visit.
+  const markDone = () =>
+    prisma.release.update({ where: { id: releaseId }, data: { lyricsFetchedAt: new Date() } });
+
   const tracks = release.tracks
     .filter((t) => t.type === 'track' && t.title.trim().length > 0)
     .slice(0, MAX_TRACKS);
-  if (tracks.length === 0) return;
+  if (tracks.length === 0) {
+    await markDone();
+    return;
+  }
 
   // Collect everything first, then replace in one transaction: the old rows
   // must never be deleted on the strength of a fetch that produced nothing.
@@ -63,4 +71,5 @@ export async function processLyrics(releaseId: string): Promise<void> {
       }),
     ),
   ]);
+  await markDone();
 }
