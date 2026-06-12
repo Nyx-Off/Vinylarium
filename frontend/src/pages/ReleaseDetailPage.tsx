@@ -129,6 +129,20 @@ export default function ReleaseDetailPage() {
     navigate('/library');
   }
 
+  // Hidden = absent from the library grids/bins but still searchable.
+  async function toggleHidden() {
+    setBusy(true);
+    try {
+      await api.patch(`/releases/${id}`, { hidden: !r!.hidden });
+      invalidate();
+      setMsg(r!.hidden ? 'Disque de nouveau visible dans la bibliothèque.' : 'Disque masqué de la bibliothèque (toujours trouvable via la recherche).');
+    } catch (e) {
+      setMsg(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const flags = [
     r.flags.isLive && 'Live',
     r.flags.isCompilation && 'Compilation',
@@ -245,6 +259,14 @@ export default function ReleaseDetailPage() {
             <button onClick={() => setEditing((v) => !v)} className="btn-ghost text-xs">
               {editing ? 'Annuler' : 'Modifier'}
             </button>
+            <button
+              onClick={toggleHidden}
+              disabled={busy}
+              className="btn-ghost text-xs"
+              title="Un disque masqué disparaît de la bibliothèque mais reste trouvable via la recherche"
+            >
+              {r.hidden ? '👁 Afficher' : '🙈 Masquer'}
+            </button>
             <button onClick={remove} className="btn-ghost text-xs text-accent">
               Supprimer
             </button>
@@ -270,6 +292,16 @@ export default function ReleaseDetailPage() {
             </p>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {r.year && <span className="chip">{r.year}</span>}
+              {r.pressingYear && r.pressingYear !== r.year && (
+                <span className="chip" title="Année de fabrication de ce pressage">
+                  Pressage {r.pressingYear}
+                </span>
+              )}
+              {r.hidden && (
+                <span className="chip" title="Absent de la bibliothèque, trouvable via la recherche">
+                  🙈 Masqué
+                </span>
+              )}
               {r.country && <span className="chip">{r.country}</span>}
               {r.labels.map((l) => (
                 <span key={l.id} className="chip">

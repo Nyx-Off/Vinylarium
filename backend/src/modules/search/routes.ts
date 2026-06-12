@@ -4,12 +4,30 @@ import { RoleCategory } from '@prisma/client';
 import { prisma } from '../../db/prisma';
 import { mediaUrl } from '../../lib/storage';
 
+// ReleaseFormat.descriptions mixes physical formats with edition qualifiers
+// ("Reissue", "Stereo", "Gatefold"…); only the format-like values make sense
+// as a search facet (33/45 RPM, LP/EP/Single, sizes).
+const FORMAT_FACETS = new Set([
+  'LP',
+  'EP',
+  'Single',
+  'Maxi-Single',
+  'Mini-Album',
+  'Album',
+  '33 ⅓ RPM',
+  '45 RPM',
+  '78 RPM',
+  '7"',
+  '10"',
+  '12"',
+]);
+
 export async function searchRoutes(app: FastifyInstance) {
   app.addHook('preHandler', app.authenticate);
 
   // All facet values for building the advanced-search UI.
   app.get('/facets', async () => {
-    const [genres, styles, labels, tags, instruments, storage, countries, decades] =
+    const [genres, styles, labels, tags, instruments, storage, countries, decades, formatRows] =
       await Promise.all([
         prisma.genre.findMany({
           include: { _count: { select: { releases: true } } },
@@ -52,6 +70,10 @@ export async function searchRoutes(app: FastifyInstance) {
           _count: { _all: true },
           orderBy: { decade: 'desc' },
         }),
+        prisma.$queryRaw<{ name: string; count: bigint }[]>`
+          SELECT d AS name, COUNT(DISTINCT "releaseId") AS count
+          FROM "release_formats", unnest("descriptions") AS d
+          GROUP BY d ORDER BY count DESC`,
       ]);
 
     const mapNamed = (rows: any[]) =>
@@ -69,6 +91,9 @@ export async function searchRoutes(app: FastifyInstance) {
         count: s._count.releases,
       })),
       countries: countries.map((c) => ({ name: c.country, count: c._count._all })),
+      formats: formatRows
+        .filter((f) => FORMAT_FACETS.has(f.name))
+        .map((f) => ({ name: f.name, count: Number(f.count) })),
       decades: decades
         .filter((d) => d.decade != null)
         .map((d) => ({ decade: d.decade, count: d._count._all })),

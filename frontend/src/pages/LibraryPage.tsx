@@ -1,27 +1,58 @@
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useReleases } from '../api/hooks';
 import { api } from '../api/client';
 import { ReleaseCard } from '../components/ReleaseCard';
 import { CrateBrowser } from '../components/CrateBrowser';
 import { RandomRoulette } from '../components/RandomRoulette';
 import { Spinner } from '../components/Spinner';
+import {
+  ALLOWED_PAGE_SIZES,
+  DEFAULT_PAGE_SIZE,
+  PageSizeSelect,
+  Pagination,
+} from '../components/Pagination';
 import { ReleaseListItem } from '../api/types';
+import { useState } from 'react';
 
 const SORTS = [
   { value: 'addedDesc', label: 'Ajout récent' },
   { value: 'title', label: 'Titre A→Z' },
+  { value: 'titleDesc', label: 'Titre Z→A' },
   { value: 'artist', label: 'Artiste A→Z' },
+  { value: 'artistDesc', label: 'Artiste Z→A' },
   { value: 'yearAsc', label: 'Année ↑' },
   { value: 'yearDesc', label: 'Année ↓' },
   { value: 'ratingDesc', label: 'Note ↓' },
 ];
 
 export default function LibraryPage() {
-  const [view, setView] = useState<'wall' | 'crate'>('wall');
-  const [sort, setSort] = useState('addedDesc');
-  const [q, setQ] = useState('');
-  const [page, setPage] = useState(1);
+  // Everything that defines "what am I looking at" lives in the URL, so the
+  // browser back button (e.g. from a release sheet) restores page 4 of the
+  // wall instead of dumping back on page 1.
+  const [params, setParams] = useSearchParams();
+  const view = params.get('view') === 'crate' ? 'crate' : 'wall';
+  const sort = params.get('sort') ?? 'addedDesc';
+  const q = params.get('q') ?? '';
+  const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1);
+  const sizeParam = parseInt(params.get('pageSize') ?? '', 10);
+  const pageSize = ALLOWED_PAGE_SIZES.includes(sizeParam) ? sizeParam : DEFAULT_PAGE_SIZE;
+
+  // replace:true — one history entry for the library, always carrying the
+  // latest view state.
+  function patch(changes: Record<string, string | null>) {
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [k, v] of Object.entries(changes)) {
+          if (v === null || v === '') next.delete(k);
+          else next.set(k, v);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
   const navigate = useNavigate();
   const [pick, setPick] = useState<ReleaseListItem | null>(null);
   const [rolling, setRolling] = useState(false);
@@ -41,7 +72,7 @@ export default function LibraryPage() {
   const { data, isLoading, isFetching } = useReleases(
     view === 'crate'
       ? { q: q || undefined, sort, page: 1, pageSize: 1000 }
-      : { q: q || undefined, sort, page, pageSize: 60 },
+      : { q: q || undefined, sort, page, pageSize },
   );
 
   const items = data?.items ?? [];
@@ -72,18 +103,12 @@ export default function LibraryPage() {
             className="input w-48"
             placeholder="Rechercher…"
             value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => patch({ q: e.target.value, page: null })}
           />
           <select
             className="input w-40"
             value={sort}
-            onChange={(e) => {
-              setSort(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => patch({ sort: e.target.value, page: null })}
           >
             {SORTS.map((s) => (
               <option key={s.value} value={s.value}>
@@ -91,16 +116,19 @@ export default function LibraryPage() {
               </option>
             ))}
           </select>
+          {view !== 'crate' && (
+            <PageSizeSelect value={pageSize} onChange={(n) => patch({ pageSize: String(n), page: null })} />
+          )}
           <div className="flex overflow-hidden rounded-full border border-ink/15">
             <button
               className={`px-3 py-1.5 text-sm ${view === 'wall' ? 'bg-accent text-cream' : 'text-mocha'}`}
-              onClick={() => setView('wall')}
+              onClick={() => patch({ view: null })}
             >
               Mur
             </button>
             <button
               className={`px-3 py-1.5 text-sm ${view === 'crate' ? 'bg-accent text-cream' : 'text-mocha'}`}
-              onClick={() => setView('crate')}
+              onClick={() => patch({ view: 'crate' })}
             >
               Bac
             </button>
@@ -121,14 +149,14 @@ export default function LibraryPage() {
         <div className="card mx-auto mt-10 max-w-md p-8 text-center">
           <h2 className="mb-2 font-display text-2xl">Collection vide</h2>
           <p className="mb-5 text-sm text-mocha">
-            Importez votre export Discogs ou ajoutez un disque manuellement pour commencer.
+            Récupérez votre collection Discogs depuis les paramètres ou ajoutez un disque.
           </p>
           <div className="flex justify-center gap-2">
-            <Link to="/import" className="btn-primary">
-              Importer Discogs
+            <Link to="/settings" className="btn-primary">
+              Paramètres
             </Link>
             <Link to="/add" className="btn-outline">
-              Ajout manuel
+              Ajouter un disque
             </Link>
           </div>
         </div>
@@ -142,22 +170,15 @@ export default function LibraryPage() {
         <CrateBrowser items={items} sortHint={sort} />
       )}
 
-      {view !== 'crate' && data && data.pageCount > 1 && (
-        <div className="mt-8 flex items-center justify-center gap-4">
-          <button className="btn-outline" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-            ← Précédent
-          </button>
-          <span className="text-sm text-mocha">
-            Page {data.page} / {data.pageCount}
-          </span>
-          <button
-            className="btn-outline"
-            disabled={page >= data.pageCount}
-            onClick={() => setPage((p) => p + 1)}
-          >
-            Suivant →
-          </button>
-        </div>
+      {view !== 'crate' && data && (
+        <Pagination
+          page={data.page}
+          pageCount={data.pageCount}
+          onPage={(p) => {
+            patch({ page: p <= 1 ? null : String(p) });
+            window.scrollTo({ top: 0 });
+          }}
+        />
       )}
     </div>
   );

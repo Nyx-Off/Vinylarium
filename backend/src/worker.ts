@@ -17,6 +17,7 @@ import { ensureStorageDirs } from './lib/storage';
 import { seedRoles } from './lib/seed';
 import { prisma } from './db/prisma';
 import { processImport } from './worker/jobs/import';
+import { processDiscogsSync } from './worker/jobs/discogs-sync';
 import { processEnrich } from './worker/jobs/enrich';
 import { processLyrics } from './worker/jobs/lyrics';
 import { processAlbumAnecdote } from './worker/jobs/anecdote';
@@ -90,16 +91,21 @@ async function main() {
   await recoverStuckEnrichments();
   await backfillMusicBrainz();
 
+  // Job name picks the source: 'discogs-sync' pulls the user's collection
+  // through the Discogs API (profile credentials), anything else parses a CSV.
   const importWorker = new Worker<ImportJobData, void, string>(
     QUEUE_IMPORT,
     async (job) => {
-      await processImport(job.data.importJobId);
+      if (job.name === 'discogs-sync') await processDiscogsSync(job.data.importJobId);
+      else await processImport(job.data.importJobId);
     },
     { connection: bullConnection, concurrency: 1 },
   );
 
   // Stay under the Discogs rate limit: 60/min authenticated, 25/min anonymous.
-  const max = discogs.hasAuth() ? 55 : 22;
+  // Each enrich job can make up to TWO API calls (release + master for the
+  // original year), so the per-JOB limiter budgets half the request quota.
+  const max = discogs.hasAuth() ? 27 : 11;
   const enrichWorker = new Worker<EnrichJobData, void, string>(
     QUEUE_ENRICH,
     async (job) => {

@@ -180,11 +180,11 @@ export async function statsRoutes(app: FastifyInstance) {
   app.get('/timeline', async () => {
     const [releases, undated] = await Promise.all([
       prisma.release.findMany({
-        where: { year: { not: null } },
+        where: { year: { not: null }, hidden: false },
         orderBy: [{ year: 'asc' }, { artistDisplay: 'asc' }, { title: 'asc' }],
         select: { id: true, title: true, artistDisplay: true, year: true, coverPath: true },
       }),
-      prisma.release.count({ where: { year: null } }),
+      prisma.release.count({ where: { year: null, hidden: false } }),
     ]);
     return {
       releases: releases.map((r) => ({

@@ -15,8 +15,19 @@ import {
   upsertTag,
 } from '../../lib/upserts';
 import { artistOriginJobId, enrichQueue, lyricsQueue, musicbrainzQueue } from '../../lib/queue';
+import { discogs } from '../../worker/clients/discogs';
 import { buildReleaseOrderBy, buildReleaseWhere, releaseQuerySchema } from './query';
 import { releaseDetailInclude, toDetail, toListItem } from './serialize';
+
+// Spacing gate for the live Discogs search: at most one outbound call per
+// 1.1s across all users, so typing can't eat the worker's rate budget.
+let nextDiscogsSearchAt = 0;
+async function discogsSearchGate() {
+  const now = Date.now();
+  const wait = Math.max(0, nextDiscogsSearchAt - now);
+  nextDiscogsSearchAt = Math.max(now, nextDiscogsSearchAt) + 1100;
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+}
 
 const manualReleaseSchema = z.object({
   title: z.string().trim().min(1).max(500),
@@ -68,6 +79,7 @@ const patchReleaseSchema = z.object({
   sleeveCondition: z.string().max(60).nullish(),
   storageLocationId: z.string().nullish(),
   storageSlot: z.string().max(60).nullish(),
+  hidden: z.boolean().optional(),
   tags: z.array(z.string().trim().min(1)).optional(),
   flags: z
     .object({
@@ -107,15 +119,44 @@ export async function releaseRoutes(app: FastifyInstance) {
     };
   });
 
-  // ── Bulk re-enrichment (whole collection) ─────────────────────────────────
+  // ── Bulk re-enrichment (whole collection / missing only) ──────────────────
+  // "Missing" definitions shared by the status counters and the queueing
+  // endpoint. Discogs: never successfully enriched (or failed) — releases
+  // already sitting in the queue are not re-added. Genius: enriched releases
+  // whose lyrics+anecdote pass never completed (quota outages leave them
+  // dated-null, so a later run picks up exactly where it stopped).
+  const missingDiscogsWhere = {
+    discogsReleaseId: { not: null },
+    enrichmentStatus: { notIn: ['QUEUED', 'ENRICHING'] as any },
+    OR: [{ enrichedAt: null }, { enrichmentStatus: 'FAILED' as any }],
+  };
+  const missingGeniusWhere = { enrichmentStatus: 'ENRICHED' as any, lyricsFetchedAt: null };
+
   app.get('/reenrich-status', async () => {
-    const counts = await enrichQueue.getJobCounts('waiting', 'active', 'delayed');
+    const [counts, lyricsCounts, pending, missingDiscogs, missingGenius] = await Promise.all([
+      enrichQueue.getJobCounts('waiting', 'active', 'delayed'),
+      lyricsQueue.getJobCounts('waiting', 'active', 'delayed'),
+      prisma.release.count({ where: { enrichmentStatus: { in: ['QUEUED', 'ENRICHING'] } } }),
+      prisma.release.count({ where: missingDiscogsWhere }),
+      prisma.release.count({ where: missingGeniusWhere }),
+    ]);
     const waiting = (counts.waiting ?? 0) + (counts.delayed ?? 0);
     const active = counts.active ?? 0;
-    const pending = await prisma.release.count({
-      where: { enrichmentStatus: { in: ['QUEUED', 'ENRICHING'] } },
-    });
-    return { inProgress: waiting + active > 0, waiting, active, pending };
+    const lyricsWaiting = (lyricsCounts.waiting ?? 0) + (lyricsCounts.delayed ?? 0);
+    const lyricsActive = lyricsCounts.active ?? 0;
+    return {
+      inProgress: waiting + active > 0,
+      waiting,
+      active,
+      pending,
+      missingDiscogs,
+      missingGenius,
+      lyrics: {
+        inProgress: lyricsWaiting + lyricsActive > 0,
+        waiting: lyricsWaiting,
+        active: lyricsActive,
+      },
+    };
   });
 
   app.post('/reenrich-all', async () => {
@@ -131,20 +172,142 @@ export async function releaseRoutes(app: FastifyInstance) {
     return { queued: releases.length };
   });
 
-  app.post('/reenrich-all/stop', async () => {
+  // Re-enrich ONLY what's missing. Quota exhaustion is survivable by design:
+  // the enrich queue retries 429s with backoff, and the lyrics worker pauses
+  // itself 15 min at a time on a Genius 429 then resumes where it stopped.
+  app.post('/reenrich-missing', async (req) => {
+    const { what } = z.object({ what: z.enum(['discogs', 'genius']) }).parse(req.body);
+    if (what === 'discogs') {
+      const releases = await prisma.release.findMany({
+        where: missingDiscogsWhere,
+        select: { id: true },
+      });
+      await prisma.release.updateMany({
+        where: missingDiscogsWhere,
+        data: { enrichmentStatus: 'QUEUED', enrichmentError: null },
+      });
+      await enrichQueue.addBulk(
+        releases.map((r) => ({ name: 'enrich', data: { releaseId: r.id } })),
+      );
+      return { queued: releases.length };
+    }
+    const releases = await prisma.release.findMany({
+      where: missingGeniusWhere,
+      select: { id: true },
+    });
+    await lyricsQueue.addBulk(releases.map((r) => ({ name: 'lyrics', data: { releaseId: r.id } })));
+    return { queued: releases.length };
+  });
+
+  app.post('/reenrich-all/stop', async (req) => {
     // Remove queued + delayed jobs; the job currently processing will finish.
-    await enrichQueue.drain(true);
+    const { queue } = z
+      .object({ queue: z.enum(['enrich', 'lyrics']).default('enrich') })
+      .parse((req.body as object) ?? {});
+    await (queue === 'lyrics' ? lyricsQueue : enrichQueue).drain(true);
     return { stopped: true };
   });
 
   // ── Random pick ───────────────────────────────────────────────────────────
   app.get('/random', async () => {
-    const count = await prisma.release.count();
+    const where = { hidden: false } as const;
+    const count = await prisma.release.count({ where });
     if (count === 0) throw notFound('Collection vide');
     const skip = Math.floor(Math.random() * count);
-    const r = await prisma.release.findFirst({ skip });
+    const r = await prisma.release.findFirst({ where, skip });
     if (!r) throw notFound('Collection vide');
     return toListItem(r);
+  });
+
+  // ── Live Discogs search (the "add a disc" page) ───────────────────────────
+  // Exception to the "Discogs only from the worker" rule: searches are
+  // user-driven, debounced client-side AND spaced ≥1.1s here, so they sip a
+  // few requests/min from the shared 55/min budget; enrichment retries absorb
+  // an occasional 429.
+  app.get('/discogs-search', async (req) => {
+    const { q, mode } = z
+      .object({
+        q: z.string().trim().min(2).max(200),
+        mode: z.enum(['all', 'barcode', 'catno', 'artist']).default('all'),
+      })
+      .parse(req.query);
+    if (!discogs.hasAuth()) {
+      throw badRequest(
+        'Recherche Discogs indisponible : configurez DISCOGS_TOKEN (ou key/secret) côté serveur',
+      );
+    }
+    await discogsSearchGate();
+    const params =
+      mode === 'barcode'
+        ? { barcode: q.replace(/[\s-]/g, '') }
+        : mode === 'catno'
+          ? { catno: q }
+          : mode === 'artist'
+            ? { artist: q }
+            : { q };
+    const results = await discogs.searchReleases(params);
+    // Flag what's already in the library so the UI can say so.
+    const ids = results.map((r) => r.id);
+    const existing = await prisma.release.findMany({
+      where: { discogsReleaseId: { in: ids } },
+      select: { id: true, discogsReleaseId: true },
+    });
+    const byDiscogsId = new Map(existing.map((e) => [e.discogsReleaseId, e.id]));
+    return {
+      results: results.map((r) => ({ ...r, existingId: byDiscogsId.get(r.id) ?? null })),
+    };
+  });
+
+  // ── Add straight from a Discogs search pick ───────────────────────────────
+  app.post('/from-discogs', async (req) => {
+    const body = z
+      .object({
+        discogsId: z.number().int().positive(),
+        title: z.string().trim().min(1).max(500), // "Artist - Title" from search
+        year: z.string().trim().max(10).nullish(),
+        country: z.string().trim().max(120).nullish(),
+        catalogNumber: z.string().trim().max(120).nullish(),
+        thumb: z.string().url().max(1000).nullish(),
+        storageLocationId: z.string().nullish(),
+        storageSlot: z.string().max(60).nullish(),
+      })
+      .parse(req.body);
+    const me = await currentUser(req);
+
+    const existing = await prisma.release.findUnique({
+      where: { discogsReleaseId: body.discogsId },
+      select: { id: true },
+    });
+    if (existing) return { id: existing.id, existing: true };
+
+    // Discogs search titles are "Artist - Title"; enrichment will rewrite
+    // both fields properly from the full release right after.
+    const sep = body.title.indexOf(' - ');
+    const artist = sep > 0 ? body.title.slice(0, sep).trim() : 'Unknown Artist';
+    const title = sep > 0 ? body.title.slice(sep + 3).trim() : body.title;
+    const year = body.year ? parseInt(body.year, 10) : NaN;
+
+    const release = await prisma.release.create({
+      data: {
+        source: 'DISCOGS',
+        enrichmentStatus: 'QUEUED',
+        discogsReleaseId: body.discogsId,
+        title,
+        sortTitle: sortName(title),
+        artistDisplay: artist,
+        year: Number.isFinite(year) ? year : undefined,
+        decade: deriveDecade(Number.isFinite(year) ? year : null) ?? undefined,
+        country: body.country ?? undefined,
+        catalogNumber: body.catalogNumber ?? undefined,
+        thumbUrl: body.thumb ?? undefined,
+        storageLocationId: body.storageLocationId || undefined,
+        storageSlot: body.storageSlot ?? undefined,
+        dateAdded: new Date(),
+        addedByUserId: me.id,
+      },
+    });
+    await enrichQueue.add('enrich', { releaseId: release.id });
+    return { id: release.id, existing: false };
   });
 
   // ── Detail ────────────────────────────────────────────────────────────────
@@ -283,7 +446,7 @@ export async function releaseRoutes(app: FastifyInstance) {
       data.year = body.year;
       data.decade = deriveDecade(body.year);
     }
-    for (const k of ['country', 'catalogNumber', 'notes', 'rating', 'mediaCondition', 'sleeveCondition', 'storageLocationId', 'storageSlot'] as const) {
+    for (const k of ['country', 'catalogNumber', 'notes', 'rating', 'mediaCondition', 'sleeveCondition', 'storageLocationId', 'storageSlot', 'hidden'] as const) {
       if (body[k] !== undefined) data[k] = body[k];
     }
     if (body.flags) Object.assign(data, body.flags);

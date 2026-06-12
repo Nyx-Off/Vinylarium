@@ -33,8 +33,25 @@ export const releaseQuerySchema = z.object({
   reissue: boolish,
   remaster: boolish,
   enrichmentStatus: z.string().optional(),
+  // Format facet — matches a ReleaseFormat description ("LP", "EP", "Single",
+  // "45 RPM", "33 ⅓ RPM", '7"'…) or the format name itself ("Vinyl", "CD").
+  format: z.string().optional(),
+  // Hidden releases: excluded by default; `includeHidden` mixes them in
+  // (search), `hidden` shows ONLY them (management view).
+  hidden: boolish,
+  includeHidden: boolish,
   sort: z
-    .enum(['addedDesc', 'addedAsc', 'title', 'artist', 'yearAsc', 'yearDesc', 'ratingDesc'])
+    .enum([
+      'addedDesc',
+      'addedAsc',
+      'title',
+      'titleDesc',
+      'artist',
+      'artistDesc',
+      'yearAsc',
+      'yearDesc',
+      'ratingDesc',
+    ])
     .default('addedDesc'),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(1000).default(60),
@@ -68,6 +85,15 @@ export function buildReleaseWhere(qp: ReleaseQuery): Prisma.ReleaseWhereInput {
   if (qp.tag) and.push({ tags: { some: { tag: { name: qp.tag } } } });
   if (qp.storageLocationId) and.push({ storageLocationId: qp.storageLocationId });
   if (qp.enrichmentStatus) and.push({ enrichmentStatus: qp.enrichmentStatus as any });
+  if (qp.format)
+    and.push({
+      formats: {
+        some: { OR: [{ descriptions: { has: qp.format } }, { name: qp.format }] },
+      },
+    });
+
+  if (qp.hidden) and.push({ hidden: true });
+  else if (!qp.includeHidden) and.push({ hidden: false });
 
   if (qp.live) and.push({ isLive: true });
   if (qp.studio) and.push({ isStudio: true });
@@ -106,8 +132,12 @@ export function buildReleaseOrderBy(
       return [{ createdAt: 'asc' }];
     case 'title':
       return [{ sortTitle: 'asc' }, { title: 'asc' }];
+    case 'titleDesc':
+      return [{ sortTitle: 'desc' }, { title: 'desc' }];
     case 'artist':
       return [{ artistDisplay: 'asc' }, { year: 'asc' }];
+    case 'artistDesc':
+      return [{ artistDisplay: 'desc' }, { year: 'asc' }];
     case 'yearAsc':
       return [{ year: 'asc' }, { title: 'asc' }];
     case 'yearDesc':

@@ -9,6 +9,10 @@ export interface PublicUser {
 
 export interface Me extends PublicUser {
   preferences: Record<string, unknown>;
+  // Per-user Discogs credentials (Settings → profile, collection sync).
+  // Optional: only /auth/me returns them, the login response doesn't.
+  discogsUsername?: string | null;
+  discogsToken?: string | null;
 }
 
 export type EnrichmentStatus =
@@ -29,6 +33,7 @@ export interface ReleaseListItem {
   country: string | null;
   catalogNumber: string | null;
   rating: number | null;
+  hidden: boolean;
   coverUrl: string | null;
   enrichmentStatus: EnrichmentStatus;
   isLive: boolean;
@@ -80,8 +85,10 @@ export interface ReleaseDetail {
   discogsUri: string | null;
   title: string;
   artistDisplay: string;
-  year: number | null;
+  year: number | null; // original release year of the music (master)
+  pressingYear: number | null; // year of THIS pressing
   decade: number | null;
+  hidden: boolean;
   released: string | null;
   country: string | null;
   catalogNumber: string | null;
@@ -142,6 +149,7 @@ export interface Facets {
   instruments: { id: string; name: string; count: number }[];
   storageLocations: { id: string; label: string; count: number }[];
   countries: { name: string; count: number }[];
+  formats: { name: string; count: number }[];
   decades: { decade: number; count: number }[];
 }
 
@@ -214,6 +222,9 @@ export interface ReenrichStatus {
   waiting: number;
   active: number;
   pending: number;
+  missingDiscogs: number;
+  missingGenius: number;
+  lyrics: { inProgress: boolean; waiting: number; active: number };
 }
 
 export interface Integration {
@@ -289,4 +300,18 @@ export interface UpdateStatus {
   detail: string | null;
   at: string | null;
   log: string[];
+}
+
+// ── Discogs live search (add-a-disc page) ────────────────────────────────────
+
+export interface DiscogsSearchResult {
+  id: number;
+  title: string; // "Artist - Title"
+  year: string | null;
+  country: string | null;
+  formats: string[];
+  labels: string[];
+  catno: string | null;
+  thumb: string | null;
+  existingId: string | null; // already in the library?
 }

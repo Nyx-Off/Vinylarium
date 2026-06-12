@@ -23,7 +23,8 @@ profils utilisateurs.
 
 ## ✨ Fonctionnalités
 
-- **Import Discogs** — déposez votre export CSV, suivez la progression en direct, dédoublonnage automatique.
+- **Récupération de la collection Discogs par l'API** — renseignez votre identifiant Discogs (et votre jeton pour une collection privée) dans votre profil : un bouton va chercher tous vos disques, sans export CSV, avec dédoublonnage. L'import CSV classique reste disponible.
+- **Ajout d'un disque via Discogs** — recherche en direct (nom, artiste, **code-barres**, n° de catalogue), choix de la bonne édition, et l'enrichissement fait le reste ; la saisie manuelle reste possible pour les pièces absentes de Discogs.
 - **Enrichissement automatique** — un *worker* récupère **toutes les images** (recto, verso, rondelles, encarts…), crédits, musiciens, tracklist, labels, pays, genres et styles via l'API Discogs (en respectant les quotas). Les **crédits par piste** sont aussi ingérés, avec le **modèle exact des instruments** quand Discogs le précise (« Synthesizer · Yamaha DX7 »).
 - **Origine des artistes (MusicBrainz)** — le worker géolocalise chaque artiste/groupe (1 req/s, sans jeton) : le globe montre d'où vient *la musique*, pas seulement où le vinyle a été pressé.
 - **Fiches artistes (MusicBrainz)** — pour chaque groupe : **membres** avec instruments, périodes (arrivée/départ, deux passages distincts), badge fondateur ; pour chaque musicien : ses groupes ; plus ses disques et ses apparitions en crédit dans la collection.
@@ -34,7 +35,10 @@ profils utilisateurs.
 - **Mode vitrine** — affichage plein écran d'un disque, pochette en **objet 3D** qui tourne pour montrer recto/verso ; lancer la pochette au doigt lui donne de l'**inertie** (pensé tablette).
 - **Globe interactif** — globe « cartographie ancienne » manipulable (rotation, glisser, **zoom molette / pincement**), deux vues : **origine des artistes** (MusicBrainz) ou **pays de pressage** (Discogs) ; clic sur un pays pour filtrer.
 - **Frise chronologique** — la collection en **parcours de point en point** : chaque année est un point posé librement sur la toile (pas d'axe rectiligne), relié au suivant par une **courbe qui serpente**, et les pochettes **virevoltent** en nuage autour de leur année (animation suspendue au survol) ; accès rapide par décennie, molette ou glisser pour voyager du plus ancien au plus récent.
-- **Recherche croisée** — filtrez par artiste, instrument (« qui joue de la basse »), genre, style, label, pays, décennie, version, tag, emplacement…
+- **Recherche croisée** — filtrez par artiste, instrument (« qui joue de la basse »), genre, style, label, pays, **format (33/45 tours, LP/EP/Single…)**, décennie, version, tag, emplacement… Tous les filtres et la page courante vivent dans l'URL : le bouton retour revient exactement où vous étiez.
+- **Année de la musique, pas du pressage** — l'enrichissement va chercher l'**année de sortie originale** (master Discogs) ; l'année du pressage reste affichée à part sur la fiche.
+- **Disques masqués** — masquez un vinyle de la bibliothèque (doublons, hors-sujet…) tout en le gardant **recherchable** ; un filtre « Masqués » les regroupe.
+- **Ré-enrichissement sélectif** — en plus du « tout ré-enrichir », deux boutons ne traitent **que les manquants** (Discogs / paroles Genius) ; quota épuisé = pause automatique puis reprise là où la file en était.
 - **Rangement physique** — décrivez meubles, étagères, bacs et positions ; retrouvez et filtrez vos disques par emplacement.
 - **Ajout manuel** — pour les disques absents de Discogs.
 - **Profils utilisateurs** — façon Plex : sélection à l'accueil, mot de passe optionnel, avatars ; **état des API**, **ré-enrichissement global** (start/stop) et **import Discogs** regroupés dans les paramètres.
@@ -91,9 +95,14 @@ Au premier lancement, l'application vous invite à **créer le premier compte**.
 
 ### Importer sa collection
 
-1. Sur Discogs : *Collection → Exporter* → téléchargez le CSV.
-2. Dans Vinylarium : page **Import**, déposez le fichier, suivez la progression.
+Le plus simple — **par l'API Discogs** :
+
+1. Dans Vinylarium : **Paramètres → Profil**, renseignez votre **identifiant Discogs** (et votre
+   jeton personnel si votre collection est privée).
+2. **Paramètres → Récupérer ma collection** : tous vos disques arrivent, déjà dédoublonnés.
 3. Les pochettes et crédits apparaissent au fil de l'enrichissement.
+
+Ou par **export CSV** : sur Discogs *Collection → Exporter*, puis **Paramètres → Import Discogs (CSV)**.
 
 > Sans `DISCOGS_TOKEN`, l'enrichissement fonctionne mais reste limité (25 req/min et certaines
 > images sont indisponibles). Avec un jeton : 60 req/min et pochettes complètes.
@@ -169,6 +178,14 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 - [x] **Anecdotes d'album via Genius** (description « à propos », **traduite en français**) + line-up du groupe à l'année du disque
 - [x] Crédits par piste et modèles d'instruments ; paroles Genius validées (titre + artiste) et **complètes** (extraction corrigée des pages Genius)
 - [x] **Frise chronologique** en parcours de point en point (pochettes virevoltant autour de chaque année, navigation par décennie)
+- [x] **Pagination mémorisée dans l'URL** : le retour arrière (depuis une fiche) revient sur la bonne page, saut direct de la page 1 à la page 4 (pagination numérotée), **nombre de disques par page** au choix
+- [x] **Masquer des vinyles** de la bibliothèque tout en les gardant **recherchables**
+- [x] **Tri** complet de la bibliothèque : A→Z **et** Z→A (titre, artiste), par année
+- [x] **Filtre format** dans la recherche : 33 / 45 tours, LP / EP / Single…
+- [x] **Année de sortie originale** de la musique (master Discogs) au lieu de l'année du pressage — le pressage reste affiché à part
+- [x] **Ré-enrichissement sélectif** : un bouton Discogs et un bouton Genius qui ne traitent **que les disques jamais enrichis** (date du dernier passage mémorisée) ; en cas de quota épuisé, la file **se met en pause et reprend toute seule** là où elle en était
+- [x] **Ajout via Discogs** : recherche en direct (nom, artiste, code-barres, n° catalogue) à la place de la saisie manuelle ; le menu « Ajouter » disparaît de la navigation
+- [x] **Clés API dans le profil** : identifiant + jeton Discogs par utilisateur, et **récupération de la collection Discogs directement par l'API** (sans export CSV)
 - [ ] Moteur de recherche dédié (**Meilisearch**) : recherche floue, paroles, anecdotes
 - [ ] Statistiques avancées, exploration par instruments, thèmes personnalisables
 

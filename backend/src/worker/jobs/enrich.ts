@@ -4,6 +4,28 @@ import { genius } from '../clients/genius';
 import { artistOriginJobId, lyricsQueue, musicbrainzQueue } from '../../lib/queue';
 import { applyDiscogsRelease } from '../lib/map-discogs';
 
+// Master → original-year cache: many pressings share a master, and a re-run
+// of the whole collection would otherwise refetch each master every time.
+const masterYearCache = new Map<number, number | null>();
+
+/**
+ * Original release year of the music (master year). Best-effort: a missing
+ * master or an API error keeps the pressing year; a 429 rethrows so the job
+ * retries with the rest of the enrichment.
+ */
+async function masterYearOf(masterId: unknown): Promise<number | null> {
+  if (typeof masterId !== 'number' || masterId <= 0) return null;
+  if (masterYearCache.has(masterId)) return masterYearCache.get(masterId)!;
+  try {
+    const year = await discogs.getMasterYear(masterId);
+    masterYearCache.set(masterId, year);
+    return year;
+  } catch (e) {
+    if (e instanceof DiscogsError && e.rateLimited) throw e;
+    return null;
+  }
+}
+
 /** Enrich a single release from the Discogs API. Throws to let BullMQ retry. */
 export async function processEnrich(releaseId: string): Promise<void> {
   const release = await prisma.release.findUnique({ where: { id: releaseId } });
@@ -12,8 +34,10 @@ export async function processEnrich(releaseId: string): Promise<void> {
   await prisma.release.update({ where: { id: releaseId }, data: { enrichmentStatus: 'ENRICHING' } });
 
   let data: any;
+  let masterYear: number | null = null;
   try {
     data = await discogs.getRelease(release.discogsReleaseId);
+    masterYear = await masterYearOf(data?.master_id);
   } catch (e) {
     if (e instanceof DiscogsError && e.notFound) {
       await prisma.release.update({
@@ -31,7 +55,7 @@ export async function processEnrich(releaseId: string): Promise<void> {
   }
 
   try {
-    await applyDiscogsRelease(releaseId, data);
+    await applyDiscogsRelease(releaseId, data, masterYear);
     await prisma.release.update({
       where: { id: releaseId },
       data: { enrichmentStatus: 'ENRICHED', enrichmentError: null, enrichedAt: new Date() },

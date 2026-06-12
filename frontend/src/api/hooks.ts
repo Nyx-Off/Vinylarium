@@ -22,6 +22,9 @@ export interface ReleaseFilters {
   special?: boolean;
   reissue?: boolean;
   remaster?: boolean;
+  format?: string; // "LP", "EP", "45 RPM"…
+  hidden?: boolean; // ONLY hidden releases
+  includeHidden?: boolean; // mix hidden in (search)
   enrichmentStatus?: string;
   sort?: string;
   page?: number;
@@ -97,7 +100,13 @@ export function useImportJob(id?: string, poll = false) {
   return useQuery({
     enabled: !!id,
     queryKey: ['import', id],
-    refetchInterval: poll ? 1500 : false,
+    // Poll while the job runs, stop once it reaches a terminal state.
+    refetchInterval: poll
+      ? (query) =>
+          query.state.data && ['COMPLETED', 'FAILED'].includes(query.state.data.status)
+            ? false
+            : 1500
+      : false,
     queryFn: async () => (await api.get<T.ImportJob>(`/import/${id}`)).data,
   });
 }
