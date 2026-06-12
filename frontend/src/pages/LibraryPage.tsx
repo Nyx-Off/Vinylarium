@@ -3,6 +3,7 @@ import { useReleases } from '../api/hooks';
 import { api } from '../api/client';
 import { ReleaseCard } from '../components/ReleaseCard';
 import { CrateBrowser } from '../components/CrateBrowser';
+import { PileBrowser } from '../components/PileBrowser';
 import { RandomRoulette } from '../components/RandomRoulette';
 import { Spinner } from '../components/Spinner';
 import {
@@ -30,7 +31,8 @@ export default function LibraryPage() {
   // browser back button (e.g. from a release sheet) restores page 4 of the
   // wall instead of dumping back on page 1.
   const [params, setParams] = useSearchParams();
-  const view = params.get('view') === 'crate' ? 'crate' : 'wall';
+  const viewParam = params.get('view');
+  const view = viewParam === 'crate' || viewParam === 'pile' ? viewParam : 'wall';
   const sort = params.get('sort') ?? 'addedDesc';
   const q = params.get('q') ?? '';
   const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1);
@@ -68,10 +70,10 @@ export default function LibraryPage() {
     }
   }
 
-  // Crate view shows the whole collection as one floor of bins — no paging.
+  // Crate & pile views show the whole collection at once — no paging.
   const { data, isLoading, isFetching } = useReleases(
-    view === 'crate'
-      ? { q: q || undefined, sort, page: 1, pageSize: 1000 }
+    view === 'crate' || view === 'pile'
+      ? { q: q || undefined, sort: view === 'pile' ? 'artist' : sort, page: 1, pageSize: 1000 }
       : { q: q || undefined, sort, page, pageSize },
   );
 
@@ -116,7 +118,7 @@ export default function LibraryPage() {
               </option>
             ))}
           </select>
-          {view !== 'crate' && (
+          {view === 'wall' && (
             <PageSizeSelect value={pageSize} onChange={(n) => patch({ pageSize: String(n), page: null })} />
           )}
           <div className="flex overflow-hidden rounded-full border border-ink/15">
@@ -131,6 +133,12 @@ export default function LibraryPage() {
               onClick={() => patch({ view: 'crate' })}
             >
               Bac
+            </button>
+            <button
+              className={`px-3 py-1.5 text-sm ${view === 'pile' ? 'bg-accent text-cream' : 'text-mocha'}`}
+              onClick={() => patch({ view: 'pile' })}
+            >
+              Pile
             </button>
           </div>
           <button
@@ -166,11 +174,13 @@ export default function LibraryPage() {
             <ReleaseCard key={r.id} r={r} />
           ))}
         </div>
+      ) : view === 'pile' ? (
+        <PileBrowser items={items} />
       ) : (
         <CrateBrowser items={items} sortHint={sort} />
       )}
 
-      {view !== 'crate' && data && (
+      {view === 'wall' && data && (
         <Pagination
           page={data.page}
           pageCount={data.pageCount}
