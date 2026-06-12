@@ -1,12 +1,15 @@
 import { buildApp } from './app';
 import { config } from './config';
 import { ensureStorageDirs } from './lib/storage';
+import { applyApiKeyOverrides } from './lib/api-keys';
 import { seedRoles } from './lib/seed';
 import { scheduleDailyUpdateCheck } from './lib/update';
 
 async function main() {
   await ensureStorageDirs();
   await seedRoles();
+  // UI-saved API keys (Settings, admin) override .env from the very start.
+  await applyApiKeyOverrides();
 
   const app = await buildApp();
   await app.listen({ host: config.host, port: config.port });

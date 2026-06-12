@@ -14,6 +14,7 @@ import {
   artistRelationsJobId,
 } from './lib/queue';
 import { ensureStorageDirs } from './lib/storage';
+import { applyApiKeyOverrides } from './lib/api-keys';
 import { seedRoles } from './lib/seed';
 import { prisma } from './db/prisma';
 import { processImport } from './worker/jobs/import';
@@ -88,6 +89,10 @@ async function backfillMusicBrainz() {
 async function main() {
   await ensureStorageDirs();
   await seedRoles();
+  // UI-saved API keys override .env; re-read every minute so a key saved in
+  // the Settings page reaches the worker without a restart.
+  await applyApiKeyOverrides();
+  setInterval(() => applyApiKeyOverrides().catch(() => undefined), 60_000);
   await recoverStuckEnrichments();
   await backfillMusicBrainz();
 

@@ -42,6 +42,7 @@ profils utilisateurs.
 - **Rangement physique** — décrivez meubles, étagères, bacs et positions ; retrouvez et filtrez vos disques par emplacement.
 - **Ajout manuel** — pour les disques absents de Discogs.
 - **Profils utilisateurs** — façon Plex : sélection à l'accueil, mot de passe optionnel, avatars ; **état des API**, **ré-enrichissement global** (start/stop) et **import Discogs** regroupés dans les paramètres.
+- **Clés API depuis l'interface** — les jetons Discogs et Genius du serveur se saisissent dans Paramètres (admin) et s'appliquent sans redémarrage ; le fichier `.env` reste le repli quand un champ est vide.
 - **Sauvegarde de la collection (export / restauration)** — depuis les paramètres : export d'un fichier JSON contenant les disques et tout ce qui vous appartient (notes, étoiles, tags, rangement, paroles et anecdotes manuelles) ; la restauration recrée les disques manquants (l'enrichissement Discogs se relance automatiquement) et remet vos données, sans doublon. Distinct de l'import Discogs.
 - **Sauvegarde / restauration serveur** — scripts fournis pour la base et les médias.
 - **Mise à jour intégrée** — depuis les paramètres : version installée, **vérification quotidienne automatique** contre GitHub (+ bouton « Vérifier maintenant », liste des commits en retard), et bouton **« Mettre à jour »** (admin) qui fait `git pull` + rebuild + redémarrage via un conteneur *updater* dédié, avec progression en direct.
@@ -115,9 +116,9 @@ Ou par **export CSV** : sur Discogs *Collection → Exporter*, puis **Paramètre
 | `DATABASE_URL` | URL de connexion (doit correspondre aux valeurs ci-dessus) |
 | `JWT_SECRET` | Secret de signature des sessions (généré par `setup.sh`) |
 | `FRONTEND_PORT` | Port public de l'interface (défaut `8080`) |
-| `DISCOGS_TOKEN` | Jeton d'accès personnel Discogs (enrichissement) |
+| `DISCOGS_TOKEN` | Jeton d'accès personnel Discogs (enrichissement) — modifiable aussi depuis Paramètres (admin) |
 | `DISCOGS_USER_AGENT` | User-Agent envoyé à Discogs (requis par leur API) |
-| `GENIUS_ACCESS_TOKEN` | *Client Access Token* Genius (active les paroles) — https://genius.com/api-clients |
+| `GENIUS_ACCESS_TOKEN` | *Client Access Token* Genius (active les paroles) — https://genius.com/api-clients — modifiable aussi depuis Paramètres (admin) |
 | `ANECDOTE_LANG` | Langue de traduction des anecdotes d'album (défaut `fr` ; vide = anglais d'origine) |
 | `MUSICBRAINZ_USER_AGENT` | User-Agent MusicBrainz (origine des artistes ; lecture sans OAuth ni jeton) |
 

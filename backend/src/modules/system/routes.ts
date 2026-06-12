@@ -1,6 +1,8 @@
 import { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { prisma } from '../../db/prisma';
 import { forbidden, conflict } from '../../lib/errors';
+import { envConfigured, readApiKeyOverrides, saveApiKeyOverrides } from '../../lib/api-keys';
 import {
   getCachedCheck,
   readLocalSha,
@@ -42,4 +44,34 @@ export async function systemRoutes(app: FastifyInstance) {
 
   // Progress of the running (or last) update, polled by the UI.
   app.get('/update-status', async () => readUpdateStatus());
+
+  // ── Server API keys (enrichment) — editable from the UI, admin only ──────
+  // Stored in the Setting table, layered over .env (empty field = keep .env).
+  app.get('/api-keys', async (req) => {
+    await requireAdmin(req.user.sub);
+    const overrides = await readApiKeyOverrides();
+    return {
+      discogsToken: overrides.discogsToken ?? '',
+      geniusAccessToken: overrides.geniusAccessToken ?? '',
+      envConfigured: envConfigured(),
+    };
+  });
+
+  app.put('/api-keys', async (req) => {
+    await requireAdmin(req.user.sub);
+    const body = z
+      .object({
+        discogsToken: z.string().trim().max(200).optional(),
+        geniusAccessToken: z.string().trim().max(300).optional(),
+      })
+      .parse(req.body);
+    await saveApiKeyOverrides({
+      discogsToken: body.discogsToken || undefined,
+      geniusAccessToken: body.geniusAccessToken || undefined,
+    });
+    // The API uses the new keys immediately; the worker re-reads them within
+    // a minute (its Discogs rate limiter stays at the boot value until the
+    // next worker restart — conservative, so always safe).
+    return { ok: true };
+  });
 }
