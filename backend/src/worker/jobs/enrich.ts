@@ -60,8 +60,11 @@ export async function processEnrich(releaseId: string): Promise<void> {
       where: { id: releaseId },
       data: { enrichmentStatus: 'ENRICHED', enrichmentError: null, enrichedAt: new Date() },
     });
-    // Lyrics run on their own queue so scraping never blocks enrichment.
-    if (genius.hasAuth()) {
+    // Lyrics run on their own queue so scraping never blocks enrichment —
+    // but only for releases never visited (lyricsFetchedAt null): a bulk
+    // Discogs re-enrich must not re-burn a day of Genius quota. Forcing a
+    // refresh goes through "Récupérer les paroles" on the release sheet.
+    if (genius.hasAuth() && !release.lyricsFetchedAt) {
       await lyricsQueue.add('lyrics', { releaseId }).catch(() => undefined);
     }
     // Artist origins (MusicBrainz) — only billed artists not yet resolved.
