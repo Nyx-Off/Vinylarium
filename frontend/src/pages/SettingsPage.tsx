@@ -64,6 +64,41 @@ export default function SettingsPage() {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // Server API keys (enrichment) — admin only, layered over .env.
+  const [apiKeys, setApiKeys] = useState({ discogsToken: '', geniusAccessToken: '' });
+  const [apiEnv, setApiEnv] = useState({ discogs: false, genius: false });
+  const [apiKeysLoaded, setApiKeysLoaded] = useState(false);
+  const [apiMsg, setApiMsg] = useState('');
+  const [apiBusy, setApiBusy] = useState(false);
+
+  useEffect(() => {
+    if (!user?.isAdmin) return;
+    api
+      .get<{ discogsToken: string; geniusAccessToken: string; envConfigured: { discogs: boolean; genius: boolean } }>(
+        '/system/api-keys',
+      )
+      .then(({ data }) => {
+        setApiKeys({ discogsToken: data.discogsToken, geniusAccessToken: data.geniusAccessToken });
+        setApiEnv(data.envConfigured);
+        setApiKeysLoaded(true);
+      })
+      .catch(() => {});
+  }, [user?.isAdmin]);
+
+  async function saveApiKeys() {
+    setApiBusy(true);
+    setApiMsg('');
+    try {
+      await api.put('/system/api-keys', apiKeys);
+      setApiMsg('Clés enregistrées — appliquées immédiatement (le worker les recharge sous une minute).');
+      qc.invalidateQueries({ queryKey: ['integrations'] });
+    } catch (e) {
+      setApiMsg(errorMessage(e));
+    } finally {
+      setApiBusy(false);
+    }
+  }
+
   // Discogs collection sync (API, no CSV): launch then poll the ImportJob.
   const [syncJobId, setSyncJobId] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState('');
@@ -539,13 +574,48 @@ export default function SettingsPage() {
             ))}
           </div>
         )}
-        <p className="mt-4 text-sm text-mocha">
-          Les clés Discogs / MusicBrainz / Genius se configurent dans le fichier{' '}
-          <code className="rounded bg-ink/10 px-1">.env</code> du serveur (variables{' '}
-          <code className="rounded bg-ink/10 px-1">DISCOGS_TOKEN</code>,{' '}
-          <code className="rounded bg-ink/10 px-1">GENIUS_ACCESS_TOKEN</code>…), puis{' '}
-          <code className="rounded bg-ink/10 px-1">docker compose up -d</code>.
-        </p>
+        {user?.isAdmin && apiKeysLoaded && (
+          <div className="mt-4 rounded-xl bg-ink/5 px-4 py-3">
+            <p className="font-semibold">Clés API du serveur (enrichissement)</p>
+            <p className="mb-3 text-xs text-mocha">
+              Utilisées par l'enrichissement pour toute la collection. Un champ vide garde la
+              valeur du fichier <code className="rounded bg-ink/10 px-1">.env</code> s'il y en a
+              une. MusicBrainz ne demande aucune clé.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="label">Jeton Discogs</label>
+                <input
+                  className="input"
+                  value={apiKeys.discogsToken}
+                  onChange={(e) => setApiKeys((k) => ({ ...k, discogsToken: e.target.value }))}
+                  placeholder={apiEnv.discogs ? 'défini dans .env — vide = le garder' : 'discogs.com/settings/developers'}
+                />
+              </div>
+              <div>
+                <label className="label">Jeton Genius (Client Access Token)</label>
+                <input
+                  className="input"
+                  value={apiKeys.geniusAccessToken}
+                  onChange={(e) => setApiKeys((k) => ({ ...k, geniusAccessToken: e.target.value }))}
+                  placeholder={apiEnv.genius ? 'défini dans .env — vide = le garder' : 'genius.com/api-clients'}
+                />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button onClick={saveApiKeys} disabled={apiBusy} className="btn-primary">
+                {apiBusy ? '…' : 'Enregistrer les clés'}
+              </button>
+              {apiMsg && <span className="text-sm text-accent">{apiMsg}</span>}
+            </div>
+          </div>
+        )}
+        {!user?.isAdmin && (
+          <p className="mt-4 text-sm text-mocha">
+            Les clés API du serveur se configurent ici par un administrateur (ou dans le fichier{' '}
+            <code className="rounded bg-ink/10 px-1">.env</code>).
+          </p>
+        )}
       </section>
     </div>
   );
