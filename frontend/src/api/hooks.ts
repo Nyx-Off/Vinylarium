@@ -25,6 +25,7 @@ export interface ReleaseFilters {
   format?: string; // "LP", "EP", "45 RPM"…
   hidden?: boolean; // ONLY hidden releases
   includeHidden?: boolean; // mix hidden in (search)
+  missing?: string; // comma list: "year,cover,lyrics,country,genre,storage,rating,credits,tracklist"
   enrichmentStatus?: string;
   sort?: string;
   page?: number;
