@@ -70,10 +70,12 @@ export default function LibraryPage() {
     }
   }
 
-  // Crate & pile views show the whole collection at once — no paging.
+  // Crate & pile views show the whole collection at once — no paging. The
+  // pile view filters by ARTIST client-side (the search box becomes an
+  // artist finder), so q is not sent to the API there.
   const { data, isLoading, isFetching } = useReleases(
     view === 'crate' || view === 'pile'
-      ? { q: q || undefined, sort: view === 'pile' ? 'artist' : sort, page: 1, pageSize: 1000 }
+      ? { q: view === 'pile' ? undefined : q || undefined, sort, page: 1, pageSize: 1000 }
       : { q: q || undefined, sort, page, pageSize },
   );
 
@@ -103,7 +105,7 @@ export default function LibraryPage() {
         <div className="flex flex-wrap items-center gap-2">
           <input
             className="input w-48"
-            placeholder="Rechercher…"
+            placeholder={view === 'pile' ? 'Trouver un artiste…' : 'Rechercher…'}
             value={q}
             onChange={(e) => patch({ q: e.target.value, page: null })}
           />
@@ -175,7 +177,7 @@ export default function LibraryPage() {
           ))}
         </div>
       ) : view === 'pile' ? (
-        <PileBrowser items={items} />
+        <PileBrowser items={items} filter={q} />
       ) : (
         <CrateBrowser items={items} sortHint={sort} />
       )}

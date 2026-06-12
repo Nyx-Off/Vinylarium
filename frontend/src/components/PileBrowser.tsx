@@ -10,10 +10,14 @@ import { ReleaseListItem } from '../api/types';
  * restacks); on touch / click, tapping a stacked pile explodes it and the
  * artist label restacks. Every rotation/offset is hashed from the release id
  * so piles keep their exact mess between renders.
+ *
+ * Pile ORDER follows the items order (first appearance of each artist), so
+ * the library sort select drives it: artist A→Z/Z→A, year, recently added…
+ * `filter` narrows piles by ARTIST name (accent-insensitive), client-side.
  */
 
-const CELL = 200; // px, pile cell square
-const SLEEVE = 124; // px, cover size
+const CELL = 250; // px, pile cell square — generous so the page breathes
+const SLEEVE = 152; // px, cover size
 
 /** Deterministic 0..1 from a string (FNV-1a). */
 function hash01(s: string): number {
@@ -24,6 +28,12 @@ function hash01(s: string): number {
   }
   return (h >>> 0) / 4294967295;
 }
+
+const fold = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
 
 interface Sleeve {
   r: ReleaseListItem;
@@ -40,7 +50,7 @@ interface Pile {
   sleeves: Sleeve[];
 }
 
-/** Spiral-fan position for sleeve i of n — rings of 7, 13, 19… */
+/** Spiral-fan position for sleeve i — rings of 7, 13, 19… */
 function fanPosition(i: number): { x: number; y: number } {
   if (i === 0) return { x: 0, y: 0 };
   let ring = 1;
@@ -57,6 +67,7 @@ function fanPosition(i: number): { x: number; y: number } {
   return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
 }
 
+/** Group by artist, PRESERVING the incoming order (Map insertion order). */
 function buildPiles(items: ReleaseListItem[]): Pile[] {
   const byArtist = new Map<string, ReleaseListItem[]>();
   for (const r of items) {
@@ -65,39 +76,47 @@ function buildPiles(items: ReleaseListItem[]): Pile[] {
     if (arr) arr.push(r);
     else byArtist.set(key, [r]);
   }
-  return [...byArtist.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0], 'fr', { sensitivity: 'base' }))
-    .map(([artist, releases]) => ({
-      artist,
-      sleeves: releases
-        .slice()
-        .sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999))
-        .map((r, i) => {
-          const fan = fanPosition(i);
-          return {
-            r,
-            stackX: (hash01(r.id + 'x') - 0.5) * 26,
-            stackY: (hash01(r.id + 'y') - 0.5) * 26,
-            stackRot: (hash01(r.id + 'r') - 0.5) * 50, // ±25° — every which way
-            fanX: fan.x,
-            fanY: fan.y,
-            fanRot: (hash01(r.id + 'r') - 0.5) * 8, // nearly straightened
-          };
-        }),
-    }));
+  return [...byArtist.entries()].map(([artist, releases]) => ({
+    artist,
+    sleeves: releases
+      .slice()
+      .sort((a, b) => (a.year ?? 9999) - (b.year ?? 9999))
+      .map((r, i) => {
+        const fan = fanPosition(i);
+        return {
+          r,
+          stackX: (hash01(r.id + 'x') - 0.5) * 26,
+          stackY: (hash01(r.id + 'y') - 0.5) * 26,
+          stackRot: (hash01(r.id + 'r') - 0.5) * 50, // ±25° — every which way
+          fanX: fan.x,
+          fanY: fan.y,
+          fanRot: (hash01(r.id + 'r') - 0.5) * 8, // nearly straightened
+        };
+      }),
+  }));
 }
 
-export function PileBrowser({ items }: { items: ReleaseListItem[] }) {
+export function PileBrowser({ items, filter = '' }: { items: ReleaseListItem[]; filter?: string }) {
   const navigate = useNavigate();
-  const piles = useMemo(() => buildPiles(items), [items]);
-  // Explosion factor per artist, 0 (stacked) → 1 (fully fanned out).
+  const allPiles = useMemo(() => buildPiles(items), [items]);
+  const piles = useMemo(() => {
+    const f = fold(filter.trim());
+    return f ? allPiles.filter((p) => fold(p.artist).includes(f)) : allPiles;
+  }, [allPiles, filter]);
+
+  // Explosion factor per artist, 0 (stacked) → 1 (fully fanned out). The ref
+  // mirrors the state so the wheel handler can decide preventDefault
+  // SYNCHRONOUSLY — deciding it inside the setState updater fires too late
+  // and the page scrolls along with the explosion.
   const [spread, setSpread] = useState<Record<string, number>>({});
+  const spreadRef = useRef(spread);
+  spreadRef.current = spread;
   const gridRef = useRef<HTMLDivElement>(null);
 
   // ONE delegated, non-passive wheel listener (same pattern as CrateBrowser):
-  // scrolling over a pile explodes/restacks it; page scroll is only hijacked
-  // while the gesture actually changes something, so a stacked pile lets you
-  // scroll the page upward through it and a fanned one downward.
+  // scrolling over a pile explodes/restacks it INSTEAD of scrolling the page;
+  // the page only scrolls through a pile once the gesture has nothing left to
+  // change (fully stacked + scroll up, or fully fanned + scroll down).
   useEffect(() => {
     const el = gridRef.current;
     if (!el) return;
@@ -105,22 +124,26 @@ export function PileBrowser({ items }: { items: ReleaseListItem[] }) {
       const cell = (e.target as HTMLElement).closest<HTMLElement>('[data-pile]');
       if (!cell) return;
       const artist = cell.dataset.pile!;
-      setSpread((s) => {
-        const cur = s[artist] ?? 0;
-        const next = Math.min(1, Math.max(0, cur + e.deltaY * 0.0016));
-        if (next !== cur) e.preventDefault();
-        return next === cur ? s : { ...s, [artist]: next };
-      });
+      const cur = spreadRef.current[artist] ?? 0;
+      const next = Math.min(1, Math.max(0, cur + e.deltaY * 0.0016));
+      if (next === cur) return; // nothing to change → let the page scroll
+      e.preventDefault();
+      spreadRef.current = { ...spreadRef.current, [artist]: next };
+      setSpread(spreadRef.current);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
+  if (piles.length === 0) {
+    return <p className="py-16 text-center text-mocha">Aucun artiste ne correspond à « {filter} ».</p>;
+  }
+
   return (
     <div
       ref={gridRef}
-      className="grid justify-center gap-x-6 gap-y-12 pb-24 pt-8"
-      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${CELL}px, 1fr))` }}
+      className="grid justify-center gap-x-12 gap-y-20 pb-28 pt-10"
+      style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${CELL + 40}px, 1fr))` }}
     >
       {piles.map((pile) => {
         const t = spread[pile.artist] ?? 0;
@@ -138,7 +161,7 @@ export function PileBrowser({ items }: { items: ReleaseListItem[] }) {
               className="relative h-full w-full"
               style={{ transform: 'perspective(900px) rotateX(14deg)', transformStyle: 'preserve-3d' }}
             >
-              {pile.sleeves.map((s, i) => {
+              {pile.sleeves.map((s) => {
                 const x = s.stackX + (s.fanX - s.stackX) * t;
                 const y = s.stackY + (s.fanY - s.stackY) * t;
                 const rot = s.stackRot + (s.fanRot - s.stackRot) * t;
@@ -170,7 +193,7 @@ export function PileBrowser({ items }: { items: ReleaseListItem[] }) {
               onClick={() =>
                 setSpread((sp) => ({ ...sp, [pile.artist]: (sp[pile.artist] ?? 0) > 0.45 ? 0 : 1 }))
               }
-              className="absolute -bottom-9 left-1/2 z-40 w-[90%] -translate-x-1/2 truncate rounded-full bg-cream/85 px-2 py-0.5 text-center text-xs font-medium text-mocha shadow-sm ring-1 ring-ink/10 backdrop-blur hover:text-accent"
+              className="absolute -bottom-10 left-1/2 z-40 max-w-full -translate-x-1/2 truncate rounded-full bg-cream/85 px-3 py-1 text-center text-sm font-medium text-mocha shadow-sm ring-1 ring-ink/10 backdrop-blur hover:text-accent"
               title={exploded ? 'Rempiler' : 'Éclater la pile'}
             >
               {pile.artist} · {pile.sleeves.length}
