@@ -63,6 +63,9 @@ export const config = {
     // Host checkout's .git, mounted read-only into the backend container —
     // the local commit is read from there (no git binary needed).
     gitDir: optional('GIT_DIR_PATH', '/repo/.git'),
+    // Plain-text VERSION file from the deployed checkout (mounted read-only).
+    // Compared against the same file on GitHub for the headline update check.
+    versionFile: optional('VERSION_FILE_PATH', '/repo/VERSION'),
   },
 } as const;
 

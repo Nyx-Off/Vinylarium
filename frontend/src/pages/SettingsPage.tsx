@@ -10,6 +10,13 @@ import {
   useImportJob,
 } from '../api/hooks';
 import { useAuth } from '../lib/auth';
+import {
+  FEATURES,
+  FeatureFlags,
+  FeatureKey,
+  LIBRARY_VIEW_KEYS,
+  resolveFeatures,
+} from '../lib/features';
 import { Integration, ImportJob, UpdateStatus } from '../api/types';
 
 export default function SettingsPage() {
@@ -63,6 +70,33 @@ export default function SettingsPage() {
   const [discogsToken, setDiscogsToken] = useState(user?.discogsToken ?? '');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Per-profile display toggles (Affichage) — saved instantly on each change.
+  const [features, setFeatures] = useState<FeatureFlags>(() => resolveFeatures(user?.preferences));
+  const [featuresBusy, setFeaturesBusy] = useState(false);
+  const [featuresMsg, setFeaturesMsg] = useState('');
+  const enabledViewCount = LIBRARY_VIEW_KEYS.filter((k) => features[k]).length;
+
+  async function toggleFeature(key: FeatureKey, enabled: boolean) {
+    if (!user) return;
+    const prev = features;
+    const next = { ...features, [key]: enabled };
+    setFeatures(next);
+    setFeaturesBusy(true);
+    setFeaturesMsg('');
+    try {
+      await api.patch(`/users/${user.id}`, {
+        preferences: { ...(user.preferences ?? {}), features: next },
+      });
+      await refresh();
+      setFeaturesMsg('Affichage mis à jour.');
+    } catch (e) {
+      setFeatures(prev); // revert the toggle if the save failed
+      setFeaturesMsg(errorMessage(e));
+    } finally {
+      setFeaturesBusy(false);
+    }
+  }
 
   // Server API keys (enrichment) — admin only, layered over .env.
   const [apiKeys, setApiKeys] = useState({ discogsToken: '', geniusAccessToken: '' });
@@ -154,6 +188,27 @@ export default function SettingsPage() {
   const [updBusy, setUpdBusy] = useState<'idle' | 'checking' | 'updating'>('idle');
   const [updMsg, setUpdMsg] = useState('');
   const [updStatus, setUpdStatus] = useState<UpdateStatus | null>(null);
+
+  // Clear only Vinylarium's client-side caches, then hard-reload to pull the
+  // freshest build (no service worker today, but stay future-proof).
+  const [cacheBusy, setCacheBusy] = useState(false);
+  async function clearSiteCache() {
+    setCacheBusy(true);
+    try {
+      qc.clear(); // in-memory TanStack Query cache
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+    } catch {
+      /* best-effort — reload regardless */
+    }
+    window.location.reload();
+  }
 
   async function checkUpdates() {
     setUpdBusy('checking');
@@ -315,6 +370,50 @@ export default function SettingsPage() {
         <button onClick={saveProfile} disabled={busy} className="btn-primary">
           {busy ? '…' : 'Enregistrer'}
         </button>
+      </section>
+
+      <section className="card space-y-4 p-6">
+        <div>
+          <h2 className="font-display text-xl font-bold">Affichage</h2>
+          <p className="text-sm text-mocha">
+            Activez ou masquez des fonctionnalités. Les changements s'appliquent
+            aussitôt, pour ce profil.
+          </p>
+        </div>
+        {(['nav', 'library'] as const).map((group) => (
+          <div key={group} className="space-y-2">
+            <h3 className="label">
+              {group === 'nav' ? 'Menus de navigation' : 'Vues de la bibliothèque'}
+            </h3>
+            {FEATURES.filter((f) => f.group === group).map((f) => {
+              const lastView =
+                LIBRARY_VIEW_KEYS.includes(f.key) && features[f.key] && enabledViewCount <= 1;
+              return (
+                <label
+                  key={f.key}
+                  className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border border-ink/10 p-3 hover:bg-ink/5"
+                >
+                  <span>
+                    <span className="font-medium text-ink">{f.label}</span>
+                    <span className="block text-xs text-mocha">
+                      {f.description}
+                      {lastView && ' · au moins une vue doit rester active'}
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    className="peer sr-only"
+                    checked={features[f.key]}
+                    disabled={featuresBusy || lastView}
+                    onChange={(e) => toggleFeature(f.key, e.target.checked)}
+                  />
+                  <span className="relative mt-0.5 h-6 w-11 shrink-0 rounded-full bg-ink/20 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-cream after:shadow after:transition-transform peer-checked:bg-accent peer-checked:after:translate-x-5 peer-disabled:opacity-40" />
+                </label>
+              );
+            })}
+          </div>
+        ))}
+        {featuresMsg && <p className="text-sm text-accent">{featuresMsg}</p>}
       </section>
 
       {stats && (
@@ -485,8 +584,13 @@ export default function SettingsPage() {
         <h2 className="font-display text-xl font-bold text-ink">Mise à jour de l'application</h2>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="chip">
-            Version installée : {version?.currentSha ? version.currentSha.slice(0, 7) : 'inconnue'}
+            Version installée : {version?.currentVersion ?? version?.check?.currentVersion ?? 'inconnue'}
           </span>
+          {version?.currentSha && (
+            <span className="chip" title="Commit déployé">
+              {version.currentSha.slice(0, 7)}
+            </span>
+          )}
           {version?.check && (
             <span className="text-mocha">
               Dernière vérification :{' '}
@@ -506,8 +610,10 @@ export default function SettingsPage() {
         {version?.check?.updateAvailable ? (
           <div className="rounded-xl bg-accent/10 px-4 py-3">
             <p className="font-semibold text-accent">
-              Mise à jour disponible
-              {version.check.behindBy ? ` — ${version.check.behindBy} commit(s) de retard` : ''}
+              {version.check.latestVersion
+                ? `Mise à jour disponible — version ${version.check.latestVersion}`
+                : 'Mise à jour disponible'}
+              {version.check.behindBy ? ` (${version.check.behindBy} commit(s) de retard)` : ''}
             </p>
             <ul className="mt-2 space-y-1 text-sm text-ink">
               {version.check.commits.slice(0, 8).map((c) => (
@@ -522,7 +628,12 @@ export default function SettingsPage() {
           </div>
         ) : (
           version?.check &&
-          !version.check.error && <p className="text-sm text-mocha">✓ Vinylarium est à jour.</p>
+          !version.check.error && (
+            <p className="text-sm text-mocha">
+              ✓ Vinylarium est à jour
+              {version.check.latestVersion ? ` (version ${version.check.latestVersion})` : ''}.
+            </p>
+          )
         )}
 
         {updBusy === 'updating' && (
@@ -561,6 +672,18 @@ export default function SettingsPage() {
             </button>
           )}
         </div>
+      </section>
+
+      <section className="card space-y-3 p-6">
+        <h2 className="font-display text-xl font-bold text-ink">Cache du site</h2>
+        <p className="text-sm text-mocha">
+          Vide les données mises en cache par le navigateur pour Vinylarium
+          (et seulement Vinylarium), puis recharge la page — pratique si
+          l'affichage semble figé sur une ancienne version. Tu restes connecté.
+        </p>
+        <button onClick={clearSiteCache} disabled={cacheBusy} className="btn-outline">
+          {cacheBusy ? '…' : '🧹 Vider le cache du site'}
+        </button>
       </section>
 
       <section className="card p-6">

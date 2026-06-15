@@ -6,6 +6,7 @@ import { envConfigured, readApiKeyOverrides, saveApiKeyOverrides } from '../../l
 import {
   getCachedCheck,
   readLocalSha,
+  readLocalVersion,
   readUpdateStatus,
   requestUpdate,
   runUpdateCheck,
@@ -21,8 +22,12 @@ export async function systemRoutes(app: FastifyInstance) {
 
   // Current version + last (cached) update check — cheap, no network.
   app.get('/version', async () => {
-    const [currentSha, check] = await Promise.all([readLocalSha(), getCachedCheck()]);
-    return { currentSha, check };
+    const [currentSha, currentVersion, check] = await Promise.all([
+      readLocalSha(),
+      readLocalVersion(),
+      getCachedCheck(),
+    ]);
+    return { currentSha, currentVersion, check };
   });
 
   // Force a check against GitHub right now.

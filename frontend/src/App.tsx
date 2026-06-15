@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './lib/auth';
+import { resolveFeatures } from './lib/features';
 import { Layout } from './components/Layout';
 import { Spinner } from './components/Spinner';
 import ProfilesPage from './pages/ProfilesPage';
@@ -34,6 +35,10 @@ export default function App() {
     );
   }
 
+  // A disabled feature's route falls back to the library, so a bookmarked or
+  // hand-typed URL can't reach a page the profile has switched off.
+  const features = resolveFeatures(user.preferences);
+
   return (
     <Routes>
       {/* Fullscreen, outside the app chrome. */}
@@ -44,9 +49,18 @@ export default function App() {
         <Route path="/release/:id" element={<ReleaseDetailPage />} />
         <Route path="/artist/:id" element={<ArtistPage />} />
         <Route path="/search" element={<SearchPage />} />
-        <Route path="/storage" element={<StoragePage />} />
-        <Route path="/map" element={<MapPage />} />
-        <Route path="/timeline" element={<TimelinePage />} />
+        <Route
+          path="/storage"
+          element={features.storage ? <StoragePage /> : <Navigate to="/library" replace />}
+        />
+        <Route
+          path="/map"
+          element={features.map ? <MapPage /> : <Navigate to="/library" replace />}
+        />
+        <Route
+          path="/timeline"
+          element={features.timeline ? <TimelinePage /> : <Navigate to="/library" replace />}
+        />
         <Route path="/import" element={<ImportPage />} />
         <Route path="/add" element={<ManualAddPage />} />
         <Route path="/settings" element={<SettingsPage />} />

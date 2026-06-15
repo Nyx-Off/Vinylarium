@@ -283,7 +283,9 @@ export interface UpdateCommit {
 export interface UpdateCheck {
   checkedAt: string;
   currentSha: string | null;
+  currentVersion: string | null;
   latestSha: string | null;
+  latestVersion: string | null;
   updateAvailable: boolean;
   behindBy: number | null;
   commits: UpdateCommit[];
@@ -292,6 +294,7 @@ export interface UpdateCheck {
 
 export interface SystemVersion {
   currentSha: string | null;
+  currentVersion: string | null;
   check: UpdateCheck | null;
 }
 

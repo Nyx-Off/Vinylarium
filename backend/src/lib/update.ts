@@ -26,7 +26,9 @@ export interface UpdateCommit {
 export interface UpdateCheck {
   checkedAt: string;
   currentSha: string | null;
+  currentVersion: string | null; // VERSION file in the deployed checkout
   latestSha: string | null;
+  latestVersion: string | null; // VERSION file on the GitHub branch
   updateAvailable: boolean;
   behindBy: number | null;
   commits: UpdateCommit[]; // newest first, capped
@@ -66,6 +68,38 @@ export async function readLocalSha(): Promise<string | null> {
   }
 }
 
+/** Read the human version string from the deployed checkout's VERSION file. */
+export async function readLocalVersion(): Promise<string | null> {
+  try {
+    const txt = (await fs.readFile(config.update.versionFile, 'utf8')).trim();
+    return txt || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read the VERSION file on the GitHub branch (raw). null = no file there. */
+async function fetchRemoteVersion(): Promise<string | null> {
+  const url = `https://raw.githubusercontent.com/${config.update.repo}/${config.update.branch}/VERSION`;
+  const res = await fetchWithTimeout(url, { headers: { 'User-Agent': 'Vinylarium-updater' } }, 15_000);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GitHub a répondu ${res.status}`);
+  const txt = (await res.text()).trim();
+  return txt || null;
+}
+
+/** Dotted-number compare ("1.2.0" vs "1.10.0"); -1 if a<b, 0 if equal, 1 if a>b. */
+function compareVersions(a: string, b: string): number {
+  const pa = a.replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  const pb = b.replace(/^v/i, '').split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] ?? 0;
+    const y = pb[i] ?? 0;
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
 async function github(pathname: string): Promise<Response> {
   return fetchWithTimeout(
     `https://api.github.com/repos/${config.update.repo}${pathname}`,
@@ -82,70 +116,81 @@ async function github(pathname: string): Promise<Response> {
 /** Compare the local commit against the GitHub branch and cache the result. */
 export async function runUpdateCheck(): Promise<UpdateCheck> {
   const checkedAt = new Date().toISOString();
-  const currentSha = await readLocalSha();
-  let result: UpdateCheck = {
+  const [currentSha, currentVersion] = await Promise.all([readLocalSha(), readLocalVersion()]);
+  const result: UpdateCheck = {
     checkedAt,
     currentSha,
+    currentVersion,
     latestSha: null,
+    latestVersion: null,
     updateAvailable: false,
     behindBy: null,
     commits: [],
     error: null,
   };
 
+  // Headline signal: the VERSION file on GitHub vs the deployed one.
   try {
-    if (currentSha) {
-      // base...head → "ahead_by" is how many commits GitHub's branch has
-      // that we don't, i.e. how far behind this install is.
-      const res = await github(`/compare/${currentSha}...${config.update.branch}`);
-      if (res.ok) {
-        const data = (await res.json()) as {
-          ahead_by: number;
-          commits: { sha: string; commit: { message: string; committer?: { date?: string } } }[];
-        };
-        const commits = (data.commits ?? [])
-          .map((c) => ({
-            sha: c.sha,
-            message: (c.commit?.message ?? '').split('\n')[0],
-            date: c.commit?.committer?.date ?? null,
-          }))
-          .reverse() // GitHub returns oldest→newest; the UI wants newest first
-          .slice(0, MAX_COMMITS);
-        result = {
-          ...result,
-          latestSha: commits[0]?.sha ?? currentSha,
-          updateAvailable: data.ahead_by > 0,
-          behindBy: data.ahead_by,
-          commits,
-        };
-        await persist(result);
-        return result;
-      }
-      // 404 = local commit unknown to GitHub (local work) — fall through to
-      // a plain "latest commit" comparison.
-    }
-    const res = await github(`/commits/${config.update.branch}`);
-    if (!res.ok) throw new Error(`GitHub a répondu ${res.status}`);
-    const latest = (await res.json()) as {
-      sha: string;
-      commit: { message: string; committer?: { date?: string } };
-    };
-    result = {
-      ...result,
-      latestSha: latest.sha,
-      updateAvailable: currentSha !== null && latest.sha !== currentSha,
-      behindBy: null,
-      commits: [
-        {
-          sha: latest.sha,
-          message: (latest.commit?.message ?? '').split('\n')[0],
-          date: latest.commit?.committer?.date ?? null,
-        },
-      ],
-    };
+    result.latestVersion = await fetchRemoteVersion();
   } catch (e) {
     result.error = (e as Error).message;
   }
+
+  // Commit list + "behind by" are a best-effort bonus (WHAT changed) from a
+  // git compare; a failure here must never mask the version answer above.
+  try {
+    // base...head → "ahead_by" is how many commits GitHub's branch has that
+    // we don't, i.e. how far behind this install is.
+    const cmp = currentSha
+      ? await github(`/compare/${currentSha}...${config.update.branch}`)
+      : null;
+    if (cmp?.ok) {
+      const data = (await cmp.json()) as {
+        ahead_by: number;
+        commits: { sha: string; commit: { message: string; committer?: { date?: string } } }[];
+      };
+      result.commits = (data.commits ?? [])
+        .map((c) => ({
+          sha: c.sha,
+          message: (c.commit?.message ?? '').split('\n')[0],
+          date: c.commit?.committer?.date ?? null,
+        }))
+        .reverse() // GitHub returns oldest→newest; the UI wants newest first
+        .slice(0, MAX_COMMITS);
+      result.latestSha = result.commits[0]?.sha ?? currentSha;
+      result.behindBy = data.ahead_by;
+    } else {
+      // No local sha, or it's unknown to GitHub (local work) — just read HEAD.
+      const head = await github(`/commits/${config.update.branch}`);
+      if (head.ok) {
+        const latest = (await head.json()) as {
+          sha: string;
+          commit: { message: string; committer?: { date?: string } };
+        };
+        result.latestSha = latest.sha;
+        result.commits = [
+          {
+            sha: latest.sha,
+            message: (latest.commit?.message ?? '').split('\n')[0],
+            date: latest.commit?.committer?.date ?? null,
+          },
+        ];
+      }
+    }
+  } catch {
+    // commit list is optional — leave it empty
+  }
+
+  // Prefer the VERSION comparison; fall back to commit distance, then a bare
+  // sha mismatch when no VERSION file is published yet.
+  if (currentVersion && result.latestVersion) {
+    result.updateAvailable = compareVersions(currentVersion, result.latestVersion) < 0;
+  } else if (result.behindBy != null) {
+    result.updateAvailable = result.behindBy > 0;
+  } else if (result.latestSha && currentSha) {
+    result.updateAvailable = result.latestSha !== currentSha;
+  }
+
   await persist(result);
   return result;
 }

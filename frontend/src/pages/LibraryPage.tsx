@@ -13,7 +13,13 @@ import {
   Pagination,
 } from '../components/Pagination';
 import { ReleaseListItem } from '../api/types';
+import { useFeatures } from '../lib/features';
 import { useState } from 'react';
+
+// Each library view maps to the feature flag that can hide it.
+const VIEW_FEATURE = { wall: 'viewWall', crate: 'viewCrate', pile: 'viewPile' } as const;
+const ALL_VIEWS = ['wall', 'crate', 'pile'] as const;
+type LibraryView = (typeof ALL_VIEWS)[number];
 
 const SORTS = [
   { value: 'addedDesc', label: 'Ajout récent' },
@@ -31,8 +37,16 @@ export default function LibraryPage() {
   // browser back button (e.g. from a release sheet) restores page 4 of the
   // wall instead of dumping back on page 1.
   const [params, setParams] = useSearchParams();
+  const features = useFeatures();
+  const enabledViews = ALL_VIEWS.filter((v) => features[VIEW_FEATURE[v]]);
   const viewParam = params.get('view');
-  const view = viewParam === 'crate' || viewParam === 'pile' ? viewParam : 'wall';
+  const requestedView: LibraryView =
+    viewParam === 'crate' || viewParam === 'pile' ? viewParam : 'wall';
+  // Fall back to the first enabled view when the URL asks for a disabled one
+  // (e.g. ?view=pile after this profile turned the pile view off).
+  const view: LibraryView = enabledViews.includes(requestedView)
+    ? requestedView
+    : enabledViews[0] ?? 'wall';
   const sort = params.get('sort') ?? 'addedDesc';
   const q = params.get('q') ?? '';
   const page = Math.max(1, parseInt(params.get('page') ?? '1', 10) || 1);
@@ -123,33 +137,43 @@ export default function LibraryPage() {
           {view === 'wall' && (
             <PageSizeSelect value={pageSize} onChange={(n) => patch({ pageSize: String(n), page: null })} />
           )}
-          <div className="flex overflow-hidden rounded-full border border-ink/15">
+          {enabledViews.length > 1 && (
+            <div className="flex overflow-hidden rounded-full border border-ink/15">
+              {enabledViews.includes('wall') && (
+                <button
+                  className={`px-3 py-1.5 text-sm ${view === 'wall' ? 'bg-accent text-cream' : 'text-mocha'}`}
+                  onClick={() => patch({ view: null })}
+                >
+                  Mur
+                </button>
+              )}
+              {enabledViews.includes('crate') && (
+                <button
+                  className={`px-3 py-1.5 text-sm ${view === 'crate' ? 'bg-accent text-cream' : 'text-mocha'}`}
+                  onClick={() => patch({ view: 'crate' })}
+                >
+                  Bac
+                </button>
+              )}
+              {enabledViews.includes('pile') && (
+                <button
+                  className={`px-3 py-1.5 text-sm ${view === 'pile' ? 'bg-accent text-cream' : 'text-mocha'}`}
+                  onClick={() => patch({ view: 'pile' })}
+                >
+                  Pile
+                </button>
+              )}
+            </div>
+          )}
+          {features.random && (
             <button
-              className={`px-3 py-1.5 text-sm ${view === 'wall' ? 'bg-accent text-cream' : 'text-mocha'}`}
-              onClick={() => patch({ view: null })}
+              onClick={pickRandom}
+              className="rounded-full bg-ink/5 px-3 py-1.5 text-sm font-medium text-mocha hover:bg-ink/10"
+              title="Choisir un disque au hasard"
             >
-              Mur
+              🎲 Au hasard
             </button>
-            <button
-              className={`px-3 py-1.5 text-sm ${view === 'crate' ? 'bg-accent text-cream' : 'text-mocha'}`}
-              onClick={() => patch({ view: 'crate' })}
-            >
-              Bac
-            </button>
-            <button
-              className={`px-3 py-1.5 text-sm ${view === 'pile' ? 'bg-accent text-cream' : 'text-mocha'}`}
-              onClick={() => patch({ view: 'pile' })}
-            >
-              Pile
-            </button>
-          </div>
-          <button
-            onClick={pickRandom}
-            className="rounded-full bg-ink/5 px-3 py-1.5 text-sm font-medium text-mocha hover:bg-ink/10"
-            title="Choisir un disque au hasard"
-          >
-            🎲 Au hasard
-          </button>
+          )}
         </div>
       </div>
 

@@ -56,11 +56,15 @@ services:
       UPDATE_REPO: ${UPDATE_REPO:-Nyx-Off/Vinylarium}
       UPDATE_BRANCH: ${UPDATE_BRANCH:-main}
       GIT_DIR_PATH: /repo/.git
+      VERSION_FILE_PATH: /repo/VERSION
     volumes:
       - storage:/data
       # Read-only view of the host checkout's .git so the API knows which
       # commit is deployed (update check against GitHub).
       - ./.git:/repo/.git:ro
+      # The deployed version string (git pull keeps it current) — compared
+      # against the VERSION file on GitHub for the "up to date?" check.
+      - ./VERSION:/repo/VERSION:ro
     depends_on:
       db:
         condition: service_healthy

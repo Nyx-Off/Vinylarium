@@ -2,29 +2,33 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
+import { FeatureKey, useFeatures } from '../lib/features';
 import { Me } from '../api/types';
 
+type NavItem = { to: string; label: string; icon?: string; feature?: FeatureKey };
+
 // L'ajout de disques (recherche Discogs), l'import et la sauvegarde vivent
-// dans Paramètres (profil), pas dans la navigation.
-const NAV = [
+// dans Paramètres (profil), pas dans la navigation. `feature` = masquable
+// depuis Paramètres → Affichage (les entrées sans clé sont toujours là).
+const NAV: NavItem[] = [
   { to: '/library', label: 'Bibliothèque' },
   { to: '/search', label: 'Recherche' },
-  { to: '/storage', label: 'Rangement' },
-  { to: '/map', label: 'Carte' },
-  { to: '/timeline', label: 'Frise' },
+  { to: '/storage', label: 'Rangement', feature: 'storage' },
+  { to: '/map', label: 'Carte', feature: 'map' },
+  { to: '/timeline', label: 'Frise', feature: 'timeline' },
 ];
 
 // Mobile bottom bar: the four everyday destinations as tabs, the rest behind
 // a "Plus" sheet — the old horizontally-scrolling pill strip hid half the
 // links off-screen on a phone.
-const TABS = [
+const TABS: NavItem[] = [
   { to: '/library', label: 'Bibliothèque', icon: '💿' },
   { to: '/search', label: 'Recherche', icon: '🔍' },
-  { to: '/map', label: 'Carte', icon: '🌍' },
-  { to: '/timeline', label: 'Frise', icon: '🕰️' },
+  { to: '/map', label: 'Carte', icon: '🌍', feature: 'map' },
+  { to: '/timeline', label: 'Frise', icon: '🕰️', feature: 'timeline' },
 ];
-const MORE = [
-  { to: '/storage', label: 'Rangement', icon: '📦' },
+const MORE: NavItem[] = [
+  { to: '/storage', label: 'Rangement', icon: '📦', feature: 'storage' },
   { to: '/settings', label: 'Paramètres', icon: '⚙️' },
 ];
 
@@ -53,6 +57,7 @@ function Avatar({ user }: { user: Me | null }) {
 
 export function Layout() {
   const { user, logout } = useAuth();
+  const features = useFeatures();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -60,7 +65,12 @@ export function Layout() {
   // Navigating (from the sheet or anywhere else) closes the sheet.
   useEffect(() => setMoreOpen(false), [pathname]);
 
-  const moreActive = MORE.some((m) => pathname.startsWith(m.to));
+  // Hide whatever this profile has switched off (Paramètres → Affichage).
+  const show = (i: NavItem) => !i.feature || features[i.feature];
+  const nav = NAV.filter(show);
+  const tabs = TABS.filter(show);
+  const more = MORE.filter(show);
+  const moreActive = more.some((m) => pathname.startsWith(m.to));
 
   return (
     <div className="min-h-screen">
@@ -72,7 +82,7 @@ export function Layout() {
           </Link>
           {/* Desktop nav — on mobile the bottom tab bar takes over */}
           <nav className="no-scrollbar ml-1 hidden flex-1 items-center gap-1 overflow-x-auto md:flex">
-            {NAV.map((n) => (
+            {nav.map((n) => (
               <NavLink
                 key={n.to}
                 to={n.to}
@@ -126,7 +136,7 @@ export function Layout() {
               onClick={() => setMoreOpen(false)}
             />
             <div className="absolute bottom-full right-2 mb-2 w-56 overflow-hidden rounded-2xl border border-ink/10 bg-cream shadow-xl">
-              {MORE.map((m) => (
+              {more.map((m) => (
                 <NavLink
                   key={m.to}
                   to={m.to}
@@ -154,8 +164,11 @@ export function Layout() {
             </div>
           </>
         )}
-        <div className="grid grid-cols-5">
-          {TABS.map((t) => (
+        <div
+          className="grid"
+          style={{ gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))` }}
+        >
+          {tabs.map((t) => (
             <NavLink
               key={t.to}
               to={t.to}
