@@ -63,11 +63,30 @@ export async function upsertCountryByGeo(geo: CountryGeo) {
 }
 
 export async function upsertLabelByName(name: string, discogsLabelId?: number | null) {
-  return prisma.label.upsert({
-    where: { name },
-    update: {},
-    create: { name, discogsLabelId: discogsLabelId ?? null },
-  });
+  // Resolve by the stable Discogs id FIRST: the same label resurfaces under
+  // slightly different name strings ("Barclay" vs "Barclay (2)"), so keying
+  // only on `name` would try to create a second row with an already-used
+  // discogsLabelId and blow up on its unique constraint — which left releases
+  // stuck FAILED. Fall back to name for label-less rows.
+  if (discogsLabelId != null) {
+    const byId = await prisma.label.findUnique({ where: { discogsLabelId } });
+    if (byId) return byId;
+  }
+  const byName = await prisma.label.findUnique({ where: { name } });
+  if (byName) return byName;
+  try {
+    return await prisma.label.create({ data: { name, discogsLabelId: discogsLabelId ?? null } });
+  } catch (e) {
+    // A parallel enrich job (concurrency: 4) won the create race — re-resolve
+    // by id then name instead of failing the whole release.
+    if (discogsLabelId != null) {
+      const byId = await prisma.label.findUnique({ where: { discogsLabelId } });
+      if (byId) return byId;
+    }
+    const again = await prisma.label.findUnique({ where: { name } });
+    if (again) return again;
+    throw e;
+  }
 }
 
 export async function upsertArtistByName(name: string) {
