@@ -169,6 +169,16 @@ docker compose build
 docker compose up -d
 ```
 
+> **« git pull a échoué (commits locaux ?) » ?** L'historique distant a été réécrit : votre copie
+> a divergé et ne peut plus avancer en *fast-forward*. Réalignez-la une fois sur GitHub (les
+> fichiers non suivis — `.env`, volumes `/data` — ne sont pas touchés), puis relancez la mise à jour :
+>
+> ```bash
+> git fetch origin && git reset --hard origin/main
+> ```
+>
+> Les versions récentes de l'`updater` font ce réalignement automatiquement.
+
 ## 💾 Sauvegarde & restauration
 
 ```bash
