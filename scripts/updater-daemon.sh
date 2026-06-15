@@ -38,10 +38,23 @@ while true; do
     : > "$LOG"
     echo "[updater] mise à jour demandée"
 
-    status running "Récupération du code (git pull)"
-    if ! git pull --ff-only >>"$LOG" 2>&1; then
-      status error "git pull a échoué (commits locaux ?) — voir le journal"
+    status running "Récupération du code (git fetch)"
+    if ! git fetch origin >>"$LOG" 2>&1; then
+      status error "git fetch a échoué (réseau ? accès au dépôt ?) — voir le journal"
       continue
+    fi
+    BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
+    [ "$BRANCH" = "HEAD" ] && BRANCH=main
+    # Normal case: fast-forward to the freshly fetched remote. If the histories
+    # have DIVERGED — e.g. the remote was rewritten / force-pushed — a deployment
+    # checkout carries no local work to protect, so align HARD to the remote
+    # instead of failing forever. Untracked files (.env, /data) are left intact.
+    if ! git merge --ff-only "origin/$BRANCH" >>"$LOG" 2>&1; then
+      echo "[updater] fast-forward impossible — réalignement sur origin/$BRANCH" >>"$LOG"
+      if ! git reset --hard "origin/$BRANCH" >>"$LOG" 2>&1; then
+        status error "Impossible de s'aligner sur origin/$BRANCH — voir le journal"
+        continue
+      fi
     fi
 
     status running "Reconstruction des images (docker compose build)"
