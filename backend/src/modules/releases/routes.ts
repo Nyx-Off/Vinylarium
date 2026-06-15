@@ -19,6 +19,22 @@ import { discogs } from '../../worker/clients/discogs';
 import { buildReleaseOrderBy, buildReleaseWhere, releaseQuerySchema } from './query';
 import { releaseDetailInclude, toDetail, toListItem } from './serialize';
 
+// Migration that introduced the original-vs-pressing year split. Discs enriched
+// BEFORE it ran ON THIS INSTANCE still carry the pressing year in Release.year
+// and need a (light) years recompute. Reading its applied time per-instance is
+// correct regardless of when each deployment updated.
+const PRESSING_YEAR_MIGRATION = '20260612090000_hidden_years_profile_keys';
+async function pressingYearCutoff(): Promise<Date | null> {
+  try {
+    const rows = await prisma.$queryRaw<{ finished_at: Date | null }[]>`
+      SELECT finished_at FROM _prisma_migrations
+      WHERE migration_name = ${PRESSING_YEAR_MIGRATION} LIMIT 1`;
+    return rows[0]?.finished_at ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // Spacing gate for the live Discogs search: at most one outbound call per
 // 1.1s across all users, so typing can't eat the worker's rate budget.
 let nextDiscogsSearchAt = 0;
@@ -133,13 +149,20 @@ export async function releaseRoutes(app: FastifyInstance) {
   const missingGeniusWhere = { enrichmentStatus: 'ENRICHED' as any, lyricsFetchedAt: null };
 
   app.get('/reenrich-status', async () => {
-    const [counts, lyricsCounts, pending, missingDiscogs, missingGenius] = await Promise.all([
-      enrichQueue.getJobCounts('waiting', 'active', 'delayed'),
-      lyricsQueue.getJobCounts('waiting', 'active', 'delayed'),
-      prisma.release.count({ where: { enrichmentStatus: { in: ['QUEUED', 'ENRICHING'] } } }),
-      prisma.release.count({ where: missingDiscogsWhere }),
-      prisma.release.count({ where: missingGeniusWhere }),
-    ]);
+    const cutoff = await pressingYearCutoff();
+    const [counts, lyricsCounts, pending, missingDiscogs, missingGenius, staleYears] =
+      await Promise.all([
+        enrichQueue.getJobCounts('waiting', 'active', 'delayed'),
+        lyricsQueue.getJobCounts('waiting', 'active', 'delayed'),
+        prisma.release.count({ where: { enrichmentStatus: { in: ['QUEUED', 'ENRICHING'] } } }),
+        prisma.release.count({ where: missingDiscogsWhere }),
+        prisma.release.count({ where: missingGeniusWhere }),
+        cutoff
+          ? prisma.release.count({
+              where: { enrichmentStatus: 'ENRICHED' as any, enrichedAt: { lt: cutoff } },
+            })
+          : Promise.resolve(0),
+      ]);
     const waiting = (counts.waiting ?? 0) + (counts.delayed ?? 0);
     const active = counts.active ?? 0;
     const lyricsWaiting = (lyricsCounts.waiting ?? 0) + (lyricsCounts.delayed ?? 0);
@@ -151,6 +174,7 @@ export async function releaseRoutes(app: FastifyInstance) {
       pending,
       missingDiscogs,
       missingGenius,
+      staleYears,
       lyrics: {
         inProgress: lyricsWaiting + lyricsActive > 0,
         waiting: lyricsWaiting,
@@ -206,6 +230,25 @@ export async function releaseRoutes(app: FastifyInstance) {
       .parse((req.body as object) ?? {});
     await (queue === 'lyrics' ? lyricsQueue : enrichQueue).drain(true);
     return { stopped: true };
+  });
+
+  // Recompute the original (master) vs pressing year on discs enriched BEFORE
+  // the split — Release.year still holds the pressing year there. Light: only
+  // re-fetches the master (cached/shared across pressings, no images, no
+  // relation rebuild) via 'fix-years' jobs on the enrich queue. Scoped by the
+  // per-instance migration date so it never touches already-split discs, and
+  // idempotent (each pass bumps enrichedAt past the cutoff).
+  app.post('/recompute-years', async () => {
+    const cutoff = await pressingYearCutoff();
+    if (!cutoff) return { queued: 0 };
+    const releases = await prisma.release.findMany({
+      where: { enrichmentStatus: 'ENRICHED' as any, enrichedAt: { lt: cutoff } },
+      select: { id: true },
+    });
+    await enrichQueue.addBulk(
+      releases.map((r) => ({ name: 'fix-years', data: { releaseId: r.id } })),
+    );
+    return { queued: releases.length };
   });
 
   // ── Random pick ───────────────────────────────────────────────────────────

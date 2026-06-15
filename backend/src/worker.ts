@@ -19,7 +19,7 @@ import { seedRoles } from './lib/seed';
 import { prisma } from './db/prisma';
 import { processImport } from './worker/jobs/import';
 import { processDiscogsSync } from './worker/jobs/discogs-sync';
-import { processEnrich } from './worker/jobs/enrich';
+import { processEnrich, processFixYears } from './worker/jobs/enrich';
 import { processLyrics } from './worker/jobs/lyrics';
 import { processAlbumAnecdote } from './worker/jobs/anecdote';
 import { processArtistOrigin } from './worker/jobs/artist-origin';
@@ -114,7 +114,10 @@ async function main() {
   const enrichWorker = new Worker<EnrichJobData, void, string>(
     QUEUE_ENRICH,
     async (job) => {
-      await processEnrich(job.data.releaseId);
+      // 'fix-years' = light master-only pass (recompute original/pressing year
+      // on discs enriched before the split); anything else = full enrichment.
+      if (job.name === 'fix-years') await processFixYears(job.data.releaseId);
+      else await processEnrich(job.data.releaseId);
     },
     { connection: bullConnection, concurrency: 4, limiter: { max, duration: 60_000 } },
   );

@@ -224,6 +224,7 @@ export interface ReenrichStatus {
   pending: number;
   missingDiscogs: number;
   missingGenius: number;
+  staleYears: number;
   lyrics: { inProgress: boolean; waiting: number; active: number };
 }
 

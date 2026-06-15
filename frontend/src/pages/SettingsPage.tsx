@@ -54,6 +54,21 @@ export default function SettingsPage() {
       setMissingMsg(errorMessage(e));
     }
   }
+  const [yearsMsg, setYearsMsg] = useState('');
+  async function recomputeYears() {
+    setYearsMsg('');
+    try {
+      const { data } = await api.post<{ queued: number }>('/releases/recompute-years');
+      setYearsMsg(
+        data.queued > 0
+          ? `${data.queued} disque(s) en file — récupération du master (année d'origine), sans re-télécharger les images.`
+          : 'Rien à corriger — les années sont déjà à jour.',
+      );
+      qc.invalidateQueries({ queryKey: ['reenrich-status'] });
+    } catch (e) {
+      setYearsMsg(errorMessage(e));
+    }
+  }
   async function stopLyrics() {
     try {
       await api.post('/releases/reenrich-all/stop', { queue: 'lyrics' });
@@ -500,6 +515,25 @@ export default function SettingsPage() {
             )}
           </div>
           {missingMsg && <p className="mt-2 text-sm text-accent">{missingMsg}</p>}
+        </div>
+        <div className="rounded-xl bg-ink/5 px-4 py-3">
+          <p className="font-semibold">Corriger les années (origine / pressage)</p>
+          <p className="mb-3 text-xs text-mocha">
+            Pour les disques enrichis avant l'ajout de la distinction année d'origine /
+            année de pressage : récupère uniquement le master (année de sortie originale)
+            sans re-télécharger les pochettes ni tout ré-enrichir. Sans effet si tout est
+            déjà à jour.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={recomputeYears}
+              disabled={!reenrich || reenrich.staleYears === 0}
+              className="btn-outline"
+            >
+              🗓️ Recalculer les années{reenrich ? ` (${reenrich.staleYears})` : ''}
+            </button>
+          </div>
+          {yearsMsg && <p className="mt-2 text-sm text-accent">{yearsMsg}</p>}
         </div>
       </section>
 
