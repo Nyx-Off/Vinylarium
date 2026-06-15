@@ -1,0 +1,72 @@
+name: 🐛 Rapport de bug
+description: Signaler un dysfonctionnement
+title: "[Bug] : "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de prendre le temps de signaler un bug ! Vérifiez d'abord qu'une
+        issue similaire n'existe pas déjà.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Décrivez clairement le problème rencontré.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Étapes pour reproduire
+      placeholder: |
+        1. Aller sur « … »
+        2. Cliquer sur « … »
+        3. Observer l'erreur
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportement attendu
+      description: Que deviez-vous voir à la place ?
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Visible dans Paramètres → Mise à jour de l'application.
+      placeholder: "0.2.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Zone concernée
+      options:
+        - Bibliothèque (mur / bac / pile)
+        - Recherche
+        - Fiche disque / artiste
+        - Enrichissement (Discogs / Genius / MusicBrainz)
+        - Globe / Frise
+        - Import / Sauvegarde
+        - Mise à jour / Paramètres
+        - Autre
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Journaux / captures d'écran
+      description: "Journaux Docker pertinents (`docker compose logs backend worker`) ou captures."
+      render: shell
+    validations:
+      required: false
+  - type: input
+    id: env
+    attributes:
+      label: Navigateur / système
+      placeholder: "Firefox 130 · Linux · Docker"
+    validations:
+      required: false

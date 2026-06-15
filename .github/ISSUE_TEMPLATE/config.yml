@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation & questions d'usage
+    url: https://github.com/Nyx-Off/Vinylarium#readme
+    about: Consultez le README (installation, configuration, mise à jour) avant d'ouvrir une issue.
