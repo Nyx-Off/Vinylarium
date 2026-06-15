@@ -36,7 +36,7 @@ profils utilisateurs.
 - **Globe interactif** — globe « cartographie ancienne » manipulable (rotation, glisser, **zoom molette / pincement**), deux vues : **origine des artistes** (MusicBrainz) ou **pays de pressage** (Discogs) ; clic sur un pays pour filtrer.
 - **Frise chronologique** — la collection en **parcours de point en point** : chaque année est un point posé librement sur la toile (pas d'axe rectiligne), relié au suivant par une **courbe qui serpente**, et les pochettes **virevoltent** en nuage autour de leur année (animation suspendue au survol) ; accès rapide par décennie, molette ou glisser pour voyager du plus ancien au plus récent.
 - **Recherche croisée** — filtrez par artiste, instrument (« qui joue de la basse »), genre, style, label, pays, **format (33/45 tours, LP/EP/Single…)**, décennie, version, tag, emplacement, et par **données manquantes** (sans année, sans pochette, sans paroles, sans crédits… cumulables — pratique pour repérer ce qui reste à compléter). Tous les filtres et la page courante vivent dans l'URL : le bouton retour revient exactement où vous étiez.
-- **Année de la musique, pas du pressage** — l'enrichissement va chercher l'**année de sortie originale** (master Discogs) ; l'année du pressage reste affichée à part sur la fiche.
+- **Année de la musique, pas du pressage** — l'enrichissement va chercher l'**année de sortie originale** (master Discogs) ; l'année du pressage reste affichée à part sur la fiche. Un bouton **« Recalculer les années »** (Paramètres) corrige les disques enrichis avant cette distinction en ne récupérant que le master — sans re-télécharger les pochettes.
 - **Disques masqués** — masquez un vinyle de la bibliothèque (doublons, hors-sujet…) tout en le gardant **recherchable** ; un filtre « Masqués » les regroupe.
 - **Ré-enrichissement sélectif** — en plus du « tout ré-enrichir », deux boutons ne traitent **que les manquants** (Discogs / paroles Genius) ; quota épuisé = pause automatique puis reprise là où la file en était.
 - **Rangement physique** — décrivez meubles, étagères, bacs et positions ; retrouvez et filtrez vos disques par emplacement.
@@ -217,6 +217,7 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 - [x] **Vue « piles »** (3ᵉ mode de bibliothèque, après le mur et le bac) : des **piles de pochettes par artiste** posées en vrac sur la table — pochettes empilées dans tous les sens, vue du dessus légèrement penchée vers l'arrière ; **molette sur une pile pour l'éclater** en éventail et voir chaque disque, re-scroller pour la rempiler (au doigt : toucher la pile l'éclate, l'étiquette la rempile) ; le tri de la bibliothèque ordonne les piles (A→Z, année…) et la barre de recherche devient un **filtre d'artistes** instantané
 - [x] **Affichage configurable par profil** : activer/masquer la carte, la frise, le rangement, les vues mur/bac/pile et le bouton « au hasard » depuis les paramètres
 - [x] **Numéro de version** (fichier `VERSION`) comparé à GitHub pour la détection de mise à jour, et bouton **« vider le cache du site »**
+- [x] **Recalcul des années** (origine / pressage) : un bouton léger dans les paramètres qui ne récupère que le master (sans re-télécharger les pochettes) pour corriger les disques enrichis avant l'ajout de la distinction — ciblé par instance et idempotent
 
 ## 📦 Stockage des données
 
