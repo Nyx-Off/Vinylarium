@@ -42,10 +42,12 @@ profils utilisateurs.
 - **Rangement physique** — décrivez meubles, étagères, bacs et positions ; retrouvez et filtrez vos disques par emplacement.
 - **Ajout manuel** — pour les disques absents de Discogs.
 - **Profils utilisateurs** — façon Plex : sélection à l'accueil, mot de passe optionnel, avatars ; **état des API**, **ré-enrichissement global** (start/stop) et **import Discogs** regroupés dans les paramètres.
+- **Affichage configurable (par profil)** — dans Paramètres, des interrupteurs activer/désactiver pour la **carte**, la **frise**, le **rangement**, les trois vues de bibliothèque (**mur / bac / pile**) et le bouton **« au hasard »** : ce qui est désactivé disparaît de la navigation et des sélecteurs (au moins une vue reste toujours active).
 - **Clés API depuis l'interface** — les jetons Discogs et Genius du serveur se saisissent dans Paramètres (admin) et s'appliquent sans redémarrage ; le fichier `.env` reste le repli quand un champ est vide.
 - **Sauvegarde de la collection (export / restauration)** — depuis les paramètres : export d'un fichier JSON contenant les disques et tout ce qui vous appartient (notes, étoiles, tags, rangement, paroles et anecdotes manuelles) ; la restauration recrée les disques manquants (l'enrichissement Discogs se relance automatiquement) et remet vos données, sans doublon. Distinct de l'import Discogs.
 - **Sauvegarde / restauration serveur** — scripts fournis pour la base et les médias.
-- **Mise à jour intégrée** — depuis les paramètres : version installée, **vérification quotidienne automatique** contre GitHub (+ bouton « Vérifier maintenant », liste des commits en retard), et bouton **« Mettre à jour »** (admin) qui fait `git pull` + rebuild + redémarrage via un conteneur *updater* dédié, avec progression en direct.
+- **Mise à jour intégrée** — depuis les paramètres : **numéro de version** (fichier `VERSION` du dépôt) comparé à celui publié sur GitHub pour savoir d'un coup d'œil si vous êtes à jour, **vérification quotidienne automatique** (+ bouton « Vérifier maintenant », liste des commits en retard), et bouton **« Mettre à jour »** (admin) qui fait `git pull` + rebuild + redémarrage via un conteneur *updater* dédié, avec progression en direct.
+- **Vider le cache du site** — un bouton dans les paramètres vide les caches navigateur de Vinylarium (et seulement de Vinylarium) puis recharge, sans vous déconnecter — utile si l'affichage semble figé sur une ancienne version.
 
 ## 🏗️ Architecture
 
@@ -213,6 +215,8 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 - [x] **Ajout via Discogs** : recherche en direct (nom, artiste, code-barres, n° catalogue) à la place de la saisie manuelle ; le menu « Ajouter » disparaît de la navigation
 - [x] **Clés API dans le profil** : identifiant + jeton Discogs par utilisateur, et **récupération de la collection Discogs directement par l'API** (sans export CSV)
 - [x] **Vue « piles »** (3ᵉ mode de bibliothèque, après le mur et le bac) : des **piles de pochettes par artiste** posées en vrac sur la table — pochettes empilées dans tous les sens, vue du dessus légèrement penchée vers l'arrière ; **molette sur une pile pour l'éclater** en éventail et voir chaque disque, re-scroller pour la rempiler (au doigt : toucher la pile l'éclate, l'étiquette la rempile) ; le tri de la bibliothèque ordonne les piles (A→Z, année…) et la barre de recherche devient un **filtre d'artistes** instantané
+- [x] **Affichage configurable par profil** : activer/masquer la carte, la frise, le rangement, les vues mur/bac/pile et le bouton « au hasard » depuis les paramètres
+- [x] **Numéro de version** (fichier `VERSION`) comparé à GitHub pour la détection de mise à jour, et bouton **« vider le cache du site »**
 
 ## 📦 Stockage des données
 
