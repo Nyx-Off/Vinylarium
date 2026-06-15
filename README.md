@@ -213,8 +213,6 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 - [x] **Ajout via Discogs** : recherche en direct (nom, artiste, code-barres, n° catalogue) à la place de la saisie manuelle ; le menu « Ajouter » disparaît de la navigation
 - [x] **Clés API dans le profil** : identifiant + jeton Discogs par utilisateur, et **récupération de la collection Discogs directement par l'API** (sans export CSV)
 - [x] **Vue « piles »** (3ᵉ mode de bibliothèque, après le mur et le bac) : des **piles de pochettes par artiste** posées en vrac sur la table — pochettes empilées dans tous les sens, vue du dessus légèrement penchée vers l'arrière ; **molette sur une pile pour l'éclater** en éventail et voir chaque disque, re-scroller pour la rempiler (au doigt : toucher la pile l'éclate, l'étiquette la rempile) ; le tri de la bibliothèque ordonne les piles (A→Z, année…) et la barre de recherche devient un **filtre d'artistes** instantané
-- [ ] Moteur de recherche dédié (**Meilisearch**) : recherche floue, paroles, anecdotes
-- [ ] Statistiques avancées, exploration par instruments, thèmes personnalisables
 
 ## 📦 Stockage des données
 
