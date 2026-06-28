@@ -166,6 +166,57 @@ export interface StorageLocation {
   releaseCount: number;
 }
 
+export type FurnitureType = 'CUBES' | 'CUBE' | 'TOWER' | 'BAC' | 'VITRINE' | 'CHEVALET' | 'SHELF' | 'FRAME';
+export type FurnitureMount = 'FLOOR' | 'WALL_BACK' | 'WALL_LEFT';
+
+export interface FurnitureCell {
+  id: string;
+  cellX: number;
+  cellY: number;
+  label: string;
+  note: string | null;
+  releaseCount: number;
+  covers: string[];
+}
+
+export interface Furniture {
+  id: string;
+  name: string;
+  type: FurnitureType;
+  posX: number;
+  posY: number;
+  posZ: number;
+  rotation: number;
+  mount: FurnitureMount;
+  width: number;
+  height: number;
+  depth: number;
+  columns: number;
+  rows: number;
+  color: string | null;
+  sortOrder: number;
+  cells: FurnitureCell[];
+}
+
+export interface Room {
+  width: number;
+  depth: number;
+}
+
+export interface CellRelease {
+  id: string;
+  title: string;
+  artistDisplay: string;
+  year: number | null;
+  coverUrl: string | null;
+  storageSlot: string | null;
+}
+
+export interface CellContents {
+  cell: { id: string; label: string; note: string | null } | null;
+  releases: CellRelease[];
+}
+
 export interface ImportJob {
   id: string;
   filename: string;

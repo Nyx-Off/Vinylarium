@@ -39,7 +39,7 @@ profils utilisateurs.
 - **Année de la musique, pas du pressage** — l'enrichissement va chercher l'**année de sortie originale** (master Discogs) ; l'année du pressage reste affichée à part sur la fiche. Un bouton **« Recalculer les années »** (Paramètres) corrige les disques enrichis avant cette distinction en ne récupérant que le master — sans re-télécharger les pochettes.
 - **Disques masqués** — masquez un vinyle de la bibliothèque (doublons, hors-sujet…) tout en le gardant **recherchable** ; un filtre « Masqués » les regroupe.
 - **Ré-enrichissement sélectif** — en plus du « tout ré-enrichir », deux boutons ne traitent **que les manquants** (Discogs / paroles Genius) ; quota épuisé = pause automatique puis reprise là où la file en était.
-- **Rangement physique** — décrivez meubles, étagères, bacs et positions ; retrouvez et filtrez vos disques par emplacement.
+- **Rangement physique en 3D** — recréez votre pièce et vos meubles en 3D : **cubes (Kallax)**, cube unique, **tour à vinyles**, **bac à disques**, **vitrine**, **chevalet**, **étagère** et **cadre**. Déplacez-les **sur une grille** (avec collisions : ils ne se traversent plus, se collent bord à bord et restent dans la pièce), redimensionnez-les, réglez leur **position X/Y/Z** (pour empiler ou **accrocher au mur**), et **cliquez une case** pour y ranger des disques. Les **pochettes apparaissent dans les meubles** : de tranche dans les cubes / étagères / vitrines, face avant dans les bacs / cadres / chevalets. Les anciens emplacements « texte » restent disponibles, et la recherche filtre toujours par emplacement.
 - **Ajout manuel** — pour les disques absents de Discogs.
 - **Profils utilisateurs** — façon Plex : sélection à l'accueil, mot de passe optionnel, avatars ; **état des API**, **ré-enrichissement global** (start/stop) et **import Discogs** regroupés dans les paramètres.
 - **Affichage configurable (par profil)** — dans Paramètres, des interrupteurs activer/désactiver pour la **carte**, la **frise**, le **rangement**, les trois vues de bibliothèque (**mur / bac / pile**) et le bouton **« au hasard »** : ce qui est désactivé disparaît de la navigation et des sélecteurs (au moins une vue reste toujours active).
@@ -209,6 +209,8 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 - [x] Import Discogs + enrichissement (toutes les images typées recto/verso/photos, crédits, tracklist)
 - [x] Bibliothèque (mur / **bacs à vinyles 3D** feuilletables de bac en bac), fiches détaillées + galerie d'images, recherche croisée
 - [x] Rangement physique, ajout manuel, profils
+- [x] **Rangement physique en 3D** : pièce et meubles modélisés (cubes/Kallax, cube, tour à vinyles, bac, vitrine, chevalet, étagère, cadre), déplacement sur grille avec **collisions** (collage bord à bord, murs), **position X/Y/Z** (empilage + accrochage au mur), **pochettes affichées dans les meubles** (de tranche ou face avant selon le meuble), cases cliquables pour ranger les disques
+- [ ] **Localiser un disque dans la pièce 3D** : cliquer l'emplacement depuis la fiche du disque met en évidence son meuble et sa case dans le rangement 3D
 - [x] **Paroles via Genius** (récupération automatique piste par piste)
 - [x] **Globe / carte du monde** interactif : origine des **artistes** (MusicBrainz) ou du pressage
 - [x] Mode vitrine 3D (inertie tactile), mode aléatoire, zoom pochettes, ré-enrichissement global

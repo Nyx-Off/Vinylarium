@@ -90,6 +90,21 @@ export function useStorageLocations() {
   });
 }
 
+export function useFurniture() {
+  return useQuery({
+    queryKey: ['furniture'],
+    queryFn: async () =>
+      (await api.get<{ furniture: T.Furniture[] }>('/storage/furniture')).data.furniture,
+  });
+}
+
+export function useRoom() {
+  return useQuery({
+    queryKey: ['storage-room'],
+    queryFn: async () => (await api.get<T.Room>('/storage/room')).data,
+  });
+}
+
 export function useImportJobs() {
   return useQuery({
     queryKey: ['imports'],

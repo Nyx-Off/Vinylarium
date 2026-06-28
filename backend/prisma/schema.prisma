@@ -547,12 +547,53 @@ model StorageLocation {
   note      String?
   sortOrder Int     @default(0)
 
+  // 3D storage editor: a location can be a CELL of a Furniture piece. Created on
+  // demand when a record is first dropped into a cell; cellX/cellY index the
+  // furniture grid (0-based, column/row). Null = a plain text location as before.
+  furnitureId String?
+  cellX       Int?
+  cellY       Int?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  releases Release[]
+  releases    Release[]
+  furnitureOf Furniture? @relation(fields: [furnitureId], references: [id], onDelete: SetNull)
 
+  @@index([furnitureId])
   @@map("storage_locations")
+}
+
+// A physical piece of furniture placed in the 3D storage room. Its compartments
+// (columns × rows) are the cells records get assigned to (via StorageLocation).
+model Furniture {
+  id        String @id @default(cuid())
+  name      String
+  type      String // CUBES | BAC | VITRINE | CHEVALET | SHELF | FRAME
+  // Placement on the floor (room units = metres) and rotation around the
+  // vertical axis (degrees). The floor plane is X (right) / Z (depth); posY is
+  // elevation off the floor (stack a piece on another, or hang it on a wall).
+  posX     Float @default(0)
+  posY     Float @default(0)
+  posZ     Float @default(0)
+  rotation Float @default(0)
+  mount    String @default("FLOOR") // FLOOR | WALL_BACK | WALL_LEFT
+  // Outer dimensions in metres.
+  width  Float @default(0.77)
+  height Float @default(0.77)
+  depth  Float @default(0.39)
+  // Compartment grid (front face): columns across, rows up.
+  columns Int @default(2)
+  rows    Int @default(2)
+  color   String? // hex tint for the carcass, optional
+  sortOrder Int   @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cells StorageLocation[]
+
+  @@map("furniture")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
