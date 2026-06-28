@@ -1,4 +1,5 @@
 import { prisma } from '../../db/prisma';
+import { isPlaceholderArtist } from '../../lib/text';
 import { genius, GeniusRateLimitError } from '../clients/genius';
 import { processAlbumAnecdote } from './anecdote';
 
@@ -47,7 +48,13 @@ export async function processLyrics(releaseId: string): Promise<void> {
   const found: { trackId: string; text: string; url: string }[] = [];
   for (const track of tracks) {
     try {
-      const hit = await genius.getLyrics(release.artistDisplay, track.title);
+      // Compilations bill the release as "Various"; the per-track artist (when
+      // Discogs provides one) is the real one to search Genius with.
+      const trackArtist = track.artistDisplay?.trim() || release.artistDisplay;
+      // Without a real artist, Genius matches a literal "Various"/"Unknown
+      // Artist" page and returns junk — skip (no request, no delay needed).
+      if (isPlaceholderArtist(trackArtist)) continue;
+      const hit = await genius.getLyrics(trackArtist, track.title, release.title);
       if (hit) found.push({ trackId: track.id, text: hit.text, url: hit.url });
     } catch (e) {
       if (e instanceof GeniusRateLimitError) throw e;

@@ -12,13 +12,41 @@ import {
   upsertRole,
   upsertStyle,
 } from '../../lib/upserts';
-import { deriveDecade, deriveVersionFlags, durationToSeconds, parseYear, sortName } from '../../lib/text';
+import { deriveDecade, deriveVersionFlags, durationToSeconds, isPlaceholderArtist, parseYear, sortName } from '../../lib/text';
 
 async function getArtist(entry: any) {
   if (entry?.id && Number.isFinite(entry.id) && entry.id > 0) {
     return upsertArtistByDiscogs(entry.id, entry.name);
   }
   return upsertArtistByName(entry.name);
+}
+
+/**
+ * Render a per-track artist string from a Discogs tracklist entry's `artists`
+ * array. Compilations/soundtracks bill the release as "Various" but each track
+ * carries its real artist here — keeping it lets the lyrics lookup search the
+ * right artist. Uses the artist name variation (`anv`) when present and honours
+ * the Discogs `join` separator (" / ", " & ", "feat.", …). Returns null when
+ * the track has no per-track artist (the common single-artist album case).
+ */
+function trackArtistDisplay(t: any): string | null {
+  const arr: any[] = Array.isArray(t?.artists) ? t.artists : [];
+  if (arr.length === 0) return null;
+  let out = '';
+  arr.forEach((a, i) => {
+    const name = (a?.anv || a?.name || '').trim();
+    if (!name) return;
+    if (i > 0) {
+      // Discogs stores the separator on the PRECEDING artist's `join`.
+      const sep = String(arr[i - 1]?.join ?? '').trim();
+      out += sep ? ` ${sep} ` : ' ';
+    }
+    out += name;
+  });
+  out = out.replace(/\s+/g, ' ').trim();
+  // "Unknown Artist"/"No Artist" are Discogs placeholders, not a real artist.
+  if (out.length === 0 || isPlaceholderArtist(out)) return null;
+  return out;
 }
 
 /**
@@ -233,6 +261,7 @@ export async function applyDiscogsRelease(
         releaseId,
         position: t.position || null,
         title: t.title || '',
+        artistDisplay: trackArtistDisplay(t),
         duration: t.duration || null,
         durationSec: durationToSeconds(t.duration),
         trackIndex: ti++,

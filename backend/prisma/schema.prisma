@@ -441,6 +441,7 @@ model Track {
   releaseId  String
   position   String? // "A1", "B2", ...
   title      String
+  artistDisplay String? // per-track artist on compilations ("Various"); null = use the release artist
   duration   String? // "3:45" as printed
   durationSec Int?
   trackIndex Int     @default(0)

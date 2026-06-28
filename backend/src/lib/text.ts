@@ -1,5 +1,29 @@
 /** Text + classification helpers shared by the API and the worker. */
 
+/**
+ * Discogs placeholder "artists" that name no real artist. Searching Genius with
+ * one matches a literal "Unknown Artist"/"Various" page and returns junk lyrics,
+ * so these must never be used as a search artist — no lyrics beats wrong lyrics.
+ */
+export function isPlaceholderArtist(name?: string | null): boolean {
+  if (!name) return true;
+  const n = name
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  return (
+    n === '' ||
+    n === 'va' ||
+    n === 'various' ||
+    n === 'various artists' ||
+    n === 'unknown artist' ||
+    n === 'unknown' ||
+    n === 'no artist'
+  );
+}
+
 /** Normalised key for ordering ("The Beatles" -> "beatles"). */
 export function sortName(name: string): string {
   return name
