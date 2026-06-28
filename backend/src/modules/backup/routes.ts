@@ -4,19 +4,23 @@ import { prisma } from '../../db/prisma';
 import { badRequest } from '../../lib/errors';
 import { enrichQueue } from '../../lib/queue';
 import { deriveDecade, sortName } from '../../lib/text';
+import { cellLabel } from '../../lib/storage-cells';
 
 /**
  * Collection backup as a single JSON file — NOT the same thing as the Discogs
  * CSV import. The export captures what identifies each record (Discogs id or
  * title/artist for manual ones) plus everything the USER owns and enrichment
- * would not bring back: rating, notes, tags, physical storage assignment,
- * manual lyrics and anecdotes. Restoring recreates missing releases (and
- * queues their Discogs enrichment), updates the user-owned fields on existing
- * ones, and never duplicates: releases match by discogsReleaseId (or
- * title+artist), tags by name, storage locations by label.
+ * would not bring back: rating, notes, tags, physical storage (the 3D room, the
+ * furniture and which disc sits in which cell + its order), manual lyrics and
+ * anecdotes. Restoring recreates missing releases (and queues their Discogs
+ * enrichment), updates the user-owned fields on existing ones, and never
+ * duplicates: releases match by discogsReleaseId (or title+artist), tags by
+ * name, text locations by label, furniture by name+type.
  */
 
-const EXPORT_SCHEMA = 1;
+const ROOM_SETTING_KEY = 'storageRoom';
+const FURNITURE_TYPES = ['CUBES', 'CUBE', 'TOWER', 'BAC', 'VITRINE', 'CHEVALET', 'SHELF', 'FRAME'] as const;
+const EXPORT_SCHEMA = 2;
 
 const backupReleaseSchema = z.object({
   discogsReleaseId: z.number().int().positive().nullish(),
@@ -42,6 +46,15 @@ const backupReleaseSchema = z.object({
   isSpecialEdition: z.boolean().optional(),
   storageLocationLabel: z.string().nullish(),
   storageSlot: z.string().nullish(),
+  // 3D-furniture cell (preferred over storageLocationLabel when present).
+  storageCell: z
+    .object({
+      furnitureRef: z.string(),
+      cellX: z.number().int().min(0),
+      cellY: z.number().int().min(0),
+      position: z.number().int().min(1).nullish(),
+    })
+    .nullish(),
   hidden: z.boolean().optional(),
   tags: z.array(z.string()).default([]),
   manualLyrics: z
@@ -67,6 +80,29 @@ const backupReleaseSchema = z.object({
 const backupSchema = z.object({
   app: z.literal('vinylarium'),
   schema: z.number().int().min(1).max(EXPORT_SCHEMA),
+  room: z.object({ width: z.number(), depth: z.number() }).nullish(),
+  furniture: z
+    .array(
+      z.object({
+        ref: z.string(),
+        name: z.string().min(1),
+        type: z.enum(FURNITURE_TYPES),
+        posX: z.number().default(0),
+        posY: z.number().default(0),
+        posZ: z.number().default(0),
+        rotation: z.number().default(0),
+        mount: z.enum(['FLOOR', 'WALL_BACK', 'WALL_LEFT']).default('FLOOR'),
+        width: z.number().default(0.77),
+        height: z.number().default(0.77),
+        depth: z.number().default(0.39),
+        columns: z.number().int().min(1).default(1),
+        rows: z.number().int().min(1).default(1),
+        color: z.string().nullish(),
+        locked: z.boolean().default(false),
+        sortOrder: z.number().int().default(0),
+      }),
+    )
+    .default([]),
   storageLocations: z
     .array(
       z.object({
@@ -90,7 +126,7 @@ export async function backupRoutes(app: FastifyInstance) {
 
   // Download the whole collection as a JSON backup.
   app.get('/export', async (_req, reply) => {
-    const [releases, tags, storageLocations] = await Promise.all([
+    const [releases, tags, storageLocations, furniture, roomRow] = await Promise.all([
       prisma.release.findMany({
         orderBy: { createdAt: 'asc' },
         include: {
@@ -102,61 +138,105 @@ export async function backupRoutes(app: FastifyInstance) {
       }),
       prisma.tag.findMany({ orderBy: { name: 'asc' } }),
       prisma.storageLocation.findMany({ orderBy: { sortOrder: 'asc' } }),
+      prisma.furniture.findMany({ orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] }),
+      prisma.setting.findUnique({ where: { key: ROOM_SETTING_KEY } }),
     ]);
+
+    // ref per furniture (its index) + furnitureId → ref, so releases can point
+    // at their cell without leaking internal ids.
+    const refOf = new Map<string, string>();
+    furniture.forEach((f, i) => refOf.set(f.id, String(i)));
+    const roomVal = (roomRow?.value as any) ?? {};
 
     const payload = {
       app: 'vinylarium' as const,
       schema: EXPORT_SCHEMA,
       exportedAt: new Date().toISOString(),
-      counts: { releases: releases.length, tags: tags.length, storageLocations: storageLocations.length },
-      storageLocations: storageLocations.map((s) => ({
-        label: s.label,
-        furniture: s.furniture,
-        shelf: s.shelf,
-        column: s.column,
-        row: s.row,
-        bin: s.bin,
-        note: s.note,
-        sortOrder: s.sortOrder,
+      counts: { releases: releases.length, tags: tags.length, furniture: furniture.length },
+      room: { width: roomVal.width ?? 6, depth: roomVal.depth ?? 5 },
+      furniture: furniture.map((f, i) => ({
+        ref: String(i),
+        name: f.name,
+        type: f.type,
+        posX: f.posX,
+        posY: f.posY,
+        posZ: f.posZ,
+        rotation: f.rotation,
+        mount: f.mount,
+        width: f.width,
+        height: f.height,
+        depth: f.depth,
+        columns: f.columns,
+        rows: f.rows,
+        color: f.color,
+        locked: f.locked,
+        sortOrder: f.sortOrder,
       })),
+      // Plain text locations only — furniture cells are recreated from `furniture`.
+      storageLocations: storageLocations
+        .filter((s) => !s.furnitureId)
+        .map((s) => ({
+          label: s.label,
+          furniture: s.furniture,
+          shelf: s.shelf,
+          column: s.column,
+          row: s.row,
+          bin: s.bin,
+          note: s.note,
+          sortOrder: s.sortOrder,
+        })),
       tags: tags.map((t) => ({ name: t.name, color: t.color })),
-      releases: releases.map((r) => ({
-        discogsReleaseId: r.discogsReleaseId,
-        title: r.title,
-        artistDisplay: r.artistDisplay,
-        year: r.year,
-        releasedRaw: r.releasedRaw,
-        country: r.country,
-        catalogNumber: r.catalogNumber,
-        notes: r.notes,
-        rating: r.rating,
-        collectionFolder: r.collectionFolder,
-        mediaCondition: r.mediaCondition,
-        sleeveCondition: r.sleeveCondition,
-        collectionNotes: r.collectionNotes,
-        dateAdded: r.dateAdded,
-        thumbUrl: r.thumbUrl,
-        isStudio: r.isStudio,
-        isLive: r.isLive,
-        isCompilation: r.isCompilation,
-        isReissue: r.isReissue,
-        isRemaster: r.isRemaster,
-        isSpecialEdition: r.isSpecialEdition,
-        storageLocationLabel: r.storageLocation?.label ?? null,
-        storageSlot: r.storageSlot,
-        hidden: r.hidden,
-        tags: r.tags.map((t) => t.tag.name),
-        manualLyrics: r.lyrics.map((l) => ({
-          trackTitle: l.track?.title ?? null,
-          text: l.text,
-          sourceUrl: l.sourceUrl,
-        })),
-        manualAnecdotes: r.anecdotes.map((a) => ({
-          title: a.title,
-          body: a.body,
-          sourceUrl: a.sourceUrl,
-        })),
-      })),
+      releases: releases.map((r) => {
+        const loc = r.storageLocation;
+        const cell =
+          loc && loc.furnitureId && refOf.has(loc.furnitureId)
+            ? {
+                furnitureRef: refOf.get(loc.furnitureId)!,
+                cellX: loc.cellX ?? 0,
+                cellY: loc.cellY ?? 0,
+                position: r.storagePosition,
+              }
+            : null;
+        return {
+          discogsReleaseId: r.discogsReleaseId,
+          title: r.title,
+          artistDisplay: r.artistDisplay,
+          year: r.year,
+          releasedRaw: r.releasedRaw,
+          country: r.country,
+          catalogNumber: r.catalogNumber,
+          notes: r.notes,
+          rating: r.rating,
+          collectionFolder: r.collectionFolder,
+          mediaCondition: r.mediaCondition,
+          sleeveCondition: r.sleeveCondition,
+          collectionNotes: r.collectionNotes,
+          dateAdded: r.dateAdded,
+          thumbUrl: r.thumbUrl,
+          isStudio: r.isStudio,
+          isLive: r.isLive,
+          isCompilation: r.isCompilation,
+          isReissue: r.isReissue,
+          isRemaster: r.isRemaster,
+          isSpecialEdition: r.isSpecialEdition,
+          // A furniture cell takes precedence; otherwise a plain text location.
+          storageLocationLabel: cell ? null : loc?.label ?? null,
+          storageCell: cell,
+          storageSlot: r.storageSlot,
+          hidden: r.hidden,
+          tags: r.tags.map((t) => t.tag.name),
+          manualLyrics: r.lyrics.map((l) => ({
+            trackTitle: l.track?.title ?? null,
+            text: l.text,
+            sourceUrl: l.sourceUrl,
+          })),
+          manualAnecdotes: r.anecdotes.map((a) => ({
+            title: a.title,
+            body: a.body,
+            sourceUrl: a.sourceUrl,
+          })),
+        };
+      }),
     };
 
     const stamp = new Date().toISOString().slice(0, 10);
@@ -185,10 +265,67 @@ export async function backupRoutes(app: FastifyInstance) {
     }
     const backup = parsed.data;
 
-    // Storage locations by label, tags by name — never duplicated.
+    // Room config (single shared room).
+    if (backup.room) {
+      await prisma.setting.upsert({
+        where: { key: ROOM_SETTING_KEY },
+        create: { key: ROOM_SETTING_KEY, value: backup.room },
+        update: { value: backup.room },
+      });
+    }
+
+    // Furniture: match an existing piece by name+type (so re-imports don't
+    // duplicate), otherwise create. Keep the row so cell labels can be rebuilt.
+    type FRow = { id: string; name: string; type: string; columns: number; rows: number };
+    const furnitureByRef = new Map<string, FRow>();
+    for (const f of backup.furniture) {
+      const data = {
+        name: f.name,
+        type: f.type,
+        posX: f.posX,
+        posY: f.posY,
+        posZ: f.posZ,
+        rotation: f.rotation,
+        mount: f.mount,
+        width: f.width,
+        height: f.height,
+        depth: f.depth,
+        columns: f.columns,
+        rows: f.rows,
+        color: f.color ?? null,
+        locked: f.locked,
+        sortOrder: f.sortOrder,
+      };
+      const existing = await prisma.furniture.findFirst({ where: { name: f.name, type: f.type } });
+      const row = existing
+        ? await prisma.furniture.update({ where: { id: existing.id }, data })
+        : await prisma.furniture.create({ data });
+      furnitureByRef.set(f.ref, row);
+    }
+
+    // Resolve a release's storage cell to a StorageLocation id (creating the
+    // cell on demand), clamped to the furniture's grid.
+    async function resolveCell(ref: string, cx: number, cy: number): Promise<string | null> {
+      const f = furnitureByRef.get(ref);
+      if (!f) return null;
+      const x = Math.min(cx, f.columns - 1);
+      const y = Math.min(cy, f.rows - 1);
+      const existing = await prisma.storageLocation.findFirst({
+        where: { furnitureId: f.id, cellX: x, cellY: y },
+      });
+      if (existing) return existing.id;
+      const made = await prisma.storageLocation.create({
+        data: { label: cellLabel(f, x, y), furnitureId: f.id, cellX: x, cellY: y },
+      });
+      return made.id;
+    }
+
+    // Plain text locations by label, tags by name — never duplicated.
     const locByLabel = new Map<string, string>();
     for (const s of backup.storageLocations) {
-      const existing = await prisma.storageLocation.findFirst({ where: { label: s.label } });
+      const existing = await prisma.storageLocation.findFirst({
+        where: { label: s.label, furnitureId: null },
+      });
       const row =
         existing ??
         (await prisma.storageLocation.create({
@@ -231,6 +368,19 @@ export async function backupRoutes(app: FastifyInstance) {
             where: { title: r.title, artistDisplay: r.artistDisplay, discogsReleaseId: null },
           });
 
+      // Storage: a 3D-furniture cell wins; else a plain text location.
+      let storageLocationId: string | undefined;
+      let storagePosition: number | undefined;
+      if (r.storageCell) {
+        const cellId = await resolveCell(r.storageCell.furnitureRef, r.storageCell.cellX, r.storageCell.cellY);
+        if (cellId) {
+          storageLocationId = cellId;
+          storagePosition = r.storageCell.position ?? undefined;
+        }
+      } else if (r.storageLocationLabel) {
+        storageLocationId = locByLabel.get(r.storageLocationLabel);
+      }
+
       // Everything enrichment will NOT bring back.
       const userFields = {
         rating: r.rating ?? undefined,
@@ -240,9 +390,8 @@ export async function backupRoutes(app: FastifyInstance) {
         sleeveCondition: r.sleeveCondition ?? undefined,
         collectionNotes: r.collectionNotes ?? undefined,
         dateAdded: r.dateAdded ?? undefined,
-        storageLocationId: r.storageLocationLabel
-          ? locByLabel.get(r.storageLocationLabel)
-          : undefined,
+        storageLocationId,
+        storagePosition,
         storageSlot: r.storageSlot ?? undefined,
         hidden: r.hidden ?? undefined,
       };
@@ -335,6 +484,12 @@ export async function backupRoutes(app: FastifyInstance) {
       }
     }
 
-    return { total: backup.releases.length, created, updated, enrichQueued };
+    return {
+      total: backup.releases.length,
+      created,
+      updated,
+      enrichQueued,
+      furniture: backup.furniture.length,
+    };
   });
 }

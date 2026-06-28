@@ -296,9 +296,11 @@ export default function SettingsPage() {
         created: number;
         updated: number;
         enrichQueued: number;
+        furniture: number;
       }>('/backup/import', fd);
       setBackupMsg(
         `Sauvegarde restaurée : ${data.created} disque(s) recréé(s), ${data.updated} mis à jour` +
+          (data.furniture ? `, ${data.furniture} meuble(s) restauré(s)` : '') +
           (data.enrichQueued ? `, ${data.enrichQueued} enrichissement(s) Discogs lancé(s).` : '.'),
       );
       if (backupRef.current) backupRef.current.value = '';
@@ -592,9 +594,10 @@ export default function SettingsPage() {
           <p className="font-semibold">Sauvegarde de la collection</p>
           <p className="mb-3 text-xs text-mocha">
             Exporte un fichier JSON avec vos disques et tout ce qui vous appartient (notes, tags,
-            rangement, paroles et anecdotes manuelles). La restauration recrée les disques
-            manquants (l'enrichissement Discogs se relance tout seul) et remet vos données — sans
-            doublon. À ne pas confondre avec l'import Discogs ci-dessus.
+            paroles et anecdotes manuelles) ainsi que tout le <strong>rangement 3D</strong> : la
+            pièce, vos meubles (position, taille, verrou…) et quel disque est dans quelle case. La
+            restauration recrée les disques manquants (l'enrichissement Discogs se relance tout
+            seul) et remet vos données — sans doublon. À ne pas confondre avec l'import Discogs.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <button onClick={exportBackup} disabled={backupBusy} className="btn-outline">
