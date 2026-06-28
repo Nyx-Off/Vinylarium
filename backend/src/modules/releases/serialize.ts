@@ -209,6 +209,12 @@ export function toDetail(r: any) {
           id: r.storageLocation.id,
           label: r.storageLocation.label,
           slot: r.storageSlot,
+          // When the location is a 3D-furniture cell, expose its coordinates so
+          // the release sheet can deep-link to it, plus the disc's exact spot.
+          furnitureId: r.storageLocation.furnitureId ?? null,
+          cellX: r.storageLocation.cellX ?? null,
+          cellY: r.storageLocation.cellY ?? null,
+          position: r.storagePosition ?? null,
         }
       : null,
     createdAt: r.createdAt,

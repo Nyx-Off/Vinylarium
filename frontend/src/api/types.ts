@@ -136,7 +136,15 @@ export interface ReleaseDetail {
   identifiers: { type: string; value: string; description: string | null }[];
   externalLinks: { source: string; url: string }[];
   tags: { id: string; name: string; color: string | null }[];
-  storage: { id: string; label: string; slot: string | null } | null;
+  storage: {
+    id: string;
+    label: string;
+    slot: string | null;
+    furnitureId: string | null;
+    cellX: number | null;
+    cellY: number | null;
+    position: number | null;
+  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -194,6 +202,7 @@ export interface Furniture {
   columns: number;
   rows: number;
   color: string | null;
+  locked: boolean;
   sortOrder: number;
   cells: FurnitureCell[];
 }
@@ -209,7 +218,7 @@ export interface CellRelease {
   artistDisplay: string;
   year: number | null;
   coverUrl: string | null;
-  storageSlot: string | null;
+  position: number;
 }
 
 export interface CellContents {

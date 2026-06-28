@@ -1,10 +1,10 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, errorMessage } from '../api/client';
 import { useFurniture, useRoom, useStorageLocations } from '../api/hooks';
 import type { CellContents, Furniture, FurnitureType, ReleaseListResponse, Room } from '../api/types';
-import { findSpawnFloor, findSpawnWallBack } from '../lib/furniture';
+import { cellLabel, findSpawnFloor, findSpawnWallBack } from '../lib/furniture';
 
 // three.js is heavy — keep it out of the initial bundle, load it with the page.
 const StorageRoom3D = lazy(() => import('../components/StorageRoom3D'));
@@ -41,7 +41,9 @@ export default function StoragePage() {
   const [room, setRoom] = useState<Room>({ width: 6, depth: 5 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedCell, setSelectedCell] = useState<{ furnitureId: string; x: number; y: number } | null>(null);
+  const [focus, setFocus] = useState<{ id: string; x: number; y: number; nonce: number; coverUrl?: string; label?: string } | null>(null);
   const [error, setError] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     if (furnitureData) {
@@ -52,6 +54,31 @@ export default function StoragePage() {
   useEffect(() => {
     if (roomData) setRoom(roomData);
   }, [roomData]);
+
+  // Deep link from a release sheet: ?locate=<storageLocationId> selects the
+  // furniture + cell holding that disc and frames the camera on it.
+  useEffect(() => {
+    const locate = searchParams.get('locate');
+    if (!locate || items.length === 0) return;
+    const coverUrl = searchParams.get('cover') || undefined;
+    for (const f of items) {
+      const cell = f.cells.find((c) => c.id === locate);
+      if (cell) {
+        setSelectedId(f.id);
+        setSelectedCell({ furnitureId: f.id, x: cell.cellX, y: cell.cellY });
+        // "emplacement N" = the disc's left-to-right position in the cell.
+        const idx = coverUrl ? cell.covers.indexOf(coverUrl) : -1;
+        const base = cellLabel(f, cell.cellX, cell.cellY);
+        const label = idx >= 0 ? `${base} · emplacement ${idx + 1}` : base;
+        setFocus({ id: f.id, x: cell.cellX, y: cell.cellY, nonce: Date.now(), coverUrl, label });
+        break;
+      }
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('locate');
+    next.delete('cover');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, items, setSearchParams]);
 
   const selected = items.find((f) => f.id === selectedId) ?? null;
 
@@ -100,7 +127,7 @@ export default function StoragePage() {
   }
 
   async function deleteFurniture(id: string) {
-    if (!confirm('Supprimer ce meuble ? Les disques rangés dans ses cases ne seront plus localisés.')) return;
+    if (!confirm('Supprimer ce meuble ? Les disques qu\'il contient seront retirés de ce rangement (ils ne seront plus rangés).')) return;
     await api.delete(`/storage/furniture/${id}`);
     if (selectedId === id) setSelectedId(null);
     setSelectedCell(null);
@@ -145,6 +172,7 @@ export default function StoragePage() {
                 furniture={items}
                 room={room}
                 selectedId={selectedId}
+                focus={focus}
                 onSelectFurniture={(id) => {
                   setSelectedId(id);
                   setSelectedCell(null);
@@ -180,14 +208,20 @@ export default function StoragePage() {
           </div>
 
           {selectedCell ? (
-            <CellPanel
-              furnitureId={selectedCell.furnitureId}
-              x={selectedCell.x}
-              y={selectedCell.y}
-              furnitureName={items.find((f) => f.id === selectedCell.furnitureId)?.name ?? ''}
-              onBack={() => setSelectedCell(null)}
-              onChanged={() => invalidate(true)}
-            />
+            (() => {
+              const cf = items.find((f) => f.id === selectedCell.furnitureId);
+              return (
+                <CellPanel
+                  furnitureId={selectedCell.furnitureId}
+                  x={selectedCell.x}
+                  y={selectedCell.y}
+                  furnitureName={cf?.name ?? ''}
+                  title={cf ? cellLabel(cf, selectedCell.x, selectedCell.y) : `Case`}
+                  onBack={() => setSelectedCell(null)}
+                  onChanged={() => invalidate(true)}
+                />
+              );
+            })()
           ) : selected ? (
             <FurnitureEditor
               f={selected}
@@ -240,6 +274,15 @@ function RoomControls({ room, onChange }: { room: Room; onChange: (r: Room) => v
 }
 
 // ── Furniture editor ───────────────────────────────────────────────────────────
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-0.5 block text-[11px] font-medium text-mocha/80">{label}</span>
+      {children}
+    </label>
+  );
+}
+
 function FurnitureEditor({
   f,
   onPatch,
@@ -249,120 +292,155 @@ function FurnitureEditor({
   onPatch: (id: string, partial: Partial<Furniture>, structural?: boolean) => void;
   onDelete: () => void;
 }) {
+  const locked = f.locked;
   const num = (key: keyof Furniture, label: string, step: number, min: number, max: number, structural = false) => (
-    <label className="text-xs text-mocha">
-      {label}
+    <Field label={label}>
       <input
         type="number"
-        className="input mt-0.5 py-1"
+        className="input py-1 disabled:cursor-not-allowed disabled:opacity-50"
         step={step}
         min={min}
         max={max}
+        disabled={locked}
         value={f[key] as number}
         onChange={(e) => onPatch(f.id, { [key]: Number(e.target.value) } as Partial<Furniture>, structural)}
       />
-    </label>
+    </Field>
   );
 
   return (
-    <div className="card space-y-3 p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-display text-lg font-bold">{TYPE_LABELS[f.type]}</h2>
-        <button onClick={onDelete} className="text-sm text-mocha hover:text-accent" title="Supprimer">
-          🗑 Supprimer
-        </button>
-      </div>
-
-      <label className="block text-xs text-mocha">
-        Nom
+    <div className="card space-y-4 p-4">
+      {/* header: name + lock + delete */}
+      <div className="flex items-center gap-2">
+        <span className="text-xl">{TYPE_ICON[f.type]}</span>
         <input
-          className="input mt-0.5 py-1"
+          className="input flex-1 py-1 font-display text-base font-bold"
           value={f.name}
           onChange={(e) => onPatch(f.id, { name: e.target.value })}
         />
-      </label>
-
-      <div className="grid grid-cols-3 gap-2">
-        {num('width', 'Largeur', 0.05, 0.1, 20)}
-        {num('height', 'Hauteur', 0.05, 0.1, 10)}
-        {num('depth', 'Profondeur', 0.05, 0.05, 10)}
+        <button
+          onClick={() => onPatch(f.id, { locked: !locked })}
+          title={locked ? 'Déverrouiller' : 'Verrouiller (empêche de déplacer)'}
+          className={`rounded-full p-2 text-sm transition-colors ${
+            locked ? 'bg-accent text-cream' : 'bg-ink/5 text-mocha hover:bg-ink/10'
+          }`}
+        >
+          {locked ? '🔒' : '🔓'}
+        </button>
       </div>
 
-      {HAS_GRID.includes(f.type) && (
-        <div className="grid grid-cols-2 gap-2">
-          {num('columns', 'Colonnes', 1, 1, 20, true)}
-          {num('rows', 'Rangées', 1, 1, 20, true)}
+      <p className="text-[11px] text-mocha/70">{TYPE_LABELS[f.type]}</p>
+
+      {locked && (
+        <div className="rounded-xl bg-accent/10 px-3 py-2 text-xs text-accent-deep">
+          🔒 Meuble verrouillé — il ne peut plus être déplacé ni redimensionné. Tu peux toujours remplir ses cases.
         </div>
       )}
 
-      <div>
-        <label className="label !mb-1">Emplacement</label>
-        <div className="flex gap-1">
-          {(
-            [
-              ['FLOOR', 'Au sol'],
-              ['WALL_BACK', 'Mur fond'],
-              ['WALL_LEFT', 'Mur gauche'],
-            ] as const
-          ).map(([m, lbl]) => (
-            <button
-              key={m}
-              onClick={() => onPatch(f.id, { mount: m, posY: m !== 'FLOOR' && f.posY < 0.5 ? 1.4 : f.posY }, true)}
-              className={`flex-1 rounded-full px-2 py-1 text-xs ${f.mount === m ? 'bg-accent text-cream' : 'bg-ink/5 text-mocha hover:bg-ink/10'}`}
-            >
-              {lbl}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="label !mb-1">Position (m)</label>
-        <div className="grid grid-cols-3 gap-2">
-          {num('posX', 'X (g/d)', 0.1, -25, 25)}
-          {num('posY', 'Y (haut.)', 0.1, 0, 10)}
-          {num('posZ', 'Z (av/arr)', 0.1, -25, 25)}
-        </div>
-        <p className="mt-1 text-[11px] text-mocha/70">Y = élévation : empiler un meuble ou le monter au mur.</p>
-      </div>
-
-      {f.mount === 'FLOOR' && (
+      <fieldset disabled={locked} className={`space-y-4 transition-opacity ${locked ? 'opacity-60' : ''}`}>
+        {/* placement */}
         <div>
-          <label className="text-xs text-mocha">Rotation : {Math.round(f.rotation)}°</label>
-          <div className="mt-1 flex items-center gap-2">
-            <button className="btn-outline px-2 py-1 text-sm" onClick={() => onPatch(f.id, { rotation: (f.rotation - 15 + 360) % 360 })}>
-              ↺ -15°
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={360}
-              step={1}
-              className="flex-1"
-              value={f.rotation}
-              onChange={(e) => onPatch(f.id, { rotation: Number(e.target.value) })}
-            />
-            <button className="btn-outline px-2 py-1 text-sm" onClick={() => onPatch(f.id, { rotation: (f.rotation + 15) % 360 })}>
-              ↻ +15°
-            </button>
+          <span className="mb-1 block text-[11px] font-medium text-mocha/80">Emplacement</span>
+          <div className="flex gap-1">
+            {(
+              [
+                ['FLOOR', 'Au sol'],
+                ['WALL_BACK', 'Mur fond'],
+                ['WALL_LEFT', 'Mur gauche'],
+              ] as const
+            ).map(([m, lbl]) => (
+              <button
+                key={m}
+                disabled={locked}
+                onClick={() => onPatch(f.id, { mount: m, posY: m !== 'FLOOR' && f.posY < 0.5 ? 1.4 : f.posY }, true)}
+                className={`flex-1 rounded-full px-2 py-1 text-xs transition-colors disabled:opacity-50 ${
+                  f.mount === m ? 'bg-accent text-cream' : 'bg-ink/5 text-mocha hover:bg-ink/10'
+                }`}
+              >
+                {lbl}
+              </button>
+            ))}
           </div>
         </div>
-      )}
 
-      <label className="flex items-center gap-2 text-xs text-mocha">
-        Teinte du meuble
-        <input
-          type="color"
-          value={f.color || '#6b4e34'}
-          onChange={(e) => onPatch(f.id, { color: e.target.value })}
-          className="h-7 w-10 rounded border border-sand"
-        />
-        {f.color && (
-          <button className="text-accent hover:underline" onClick={() => onPatch(f.id, { color: null })}>
-            réinitialiser
-          </button>
+        {/* size */}
+        <div>
+          <span className="mb-1 block text-[11px] font-medium text-mocha/80">Taille (m)</span>
+          <div className="grid grid-cols-3 gap-2">
+            {num('width', 'Largeur', 0.05, 0.1, 20)}
+            {num('height', 'Hauteur', 0.05, 0.1, 10)}
+            {num('depth', 'Profondeur', 0.05, 0.05, 10)}
+          </div>
+        </div>
+
+        {/* grid */}
+        {HAS_GRID.includes(f.type) && (
+          <div>
+            <span className="mb-1 block text-[11px] font-medium text-mocha/80">Cases</span>
+            <div className="grid grid-cols-2 gap-2">
+              {num('columns', 'Colonnes', 1, 1, 20, true)}
+              {num('rows', 'Rangées', 1, 1, 20, true)}
+            </div>
+          </div>
         )}
-      </label>
+
+        {/* position */}
+        <div>
+          <span className="mb-1 block text-[11px] font-medium text-mocha/80">Position (m)</span>
+          <div className="grid grid-cols-3 gap-2">
+            {num('posX', 'X (g/d)', 0.1, -25, 25)}
+            {num('posY', 'Y (haut.)', 0.1, 0, 10)}
+            {num('posZ', 'Z (av/arr)', 0.1, -25, 25)}
+          </div>
+          <p className="mt-1 text-[11px] text-mocha/60">Y = élévation : empiler un meuble ou le monter au mur.</p>
+        </div>
+
+        {/* rotation */}
+        {f.mount === 'FLOOR' && (
+          <div>
+            <span className="mb-1 block text-[11px] font-medium text-mocha/80">Rotation — {Math.round(f.rotation)}°</span>
+            <div className="flex items-center gap-2">
+              <button className="btn-outline px-2 py-1 text-sm" disabled={locked} onClick={() => onPatch(f.id, { rotation: (f.rotation - 15 + 360) % 360 })}>
+                ↺
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={360}
+                step={1}
+                className="flex-1 accent-accent"
+                disabled={locked}
+                value={f.rotation}
+                onChange={(e) => onPatch(f.id, { rotation: Number(e.target.value) })}
+              />
+              <button className="btn-outline px-2 py-1 text-sm" disabled={locked} onClick={() => onPatch(f.id, { rotation: (f.rotation + 15) % 360 })}>
+                ↻
+              </button>
+            </div>
+          </div>
+        )}
+      </fieldset>
+
+      {/* tint (allowed even when locked) + delete */}
+      <div className="flex items-center justify-between border-t border-sand/60 pt-3">
+        <label className="flex items-center gap-2 text-xs text-mocha">
+          Teinte
+          <input
+            type="color"
+            value={f.color || '#6b4e34'}
+            onChange={(e) => onPatch(f.id, { color: e.target.value })}
+            className="h-7 w-9 cursor-pointer rounded border border-sand"
+          />
+          {f.color && (
+            <button className="text-accent hover:underline" onClick={() => onPatch(f.id, { color: null })}>
+              réinit.
+            </button>
+          )}
+        </label>
+        <button onClick={onDelete} className="text-sm text-mocha hover:text-accent" title="Supprimer le meuble">
+          🗑 Supprimer
+        </button>
+      </div>
     </div>
   );
 }
@@ -373,6 +451,7 @@ function CellPanel({
   x,
   y,
   furnitureName,
+  title,
   onBack,
   onChanged,
 }: {
@@ -380,6 +459,7 @@ function CellPanel({
   x: number;
   y: number;
   furnitureName: string;
+  title: string;
   onBack: () => void;
   onChanged: () => void;
 }) {
@@ -404,13 +484,33 @@ function CellPanel({
     await api.delete(`/storage/furniture/${furnitureId}/cells/${x}/${y}/releases/${releaseId}`);
     refresh();
   }
+  async function reorder(newOrder: string[]) {
+    qc.setQueryData<CellContents>(cellKey, (prev) =>
+      prev
+        ? {
+            ...prev,
+            releases: newOrder
+              .map((id, i) => ({ ...prev.releases.find((r) => r.id === id)!, position: i + 1 }))
+              .filter(Boolean),
+          }
+        : prev,
+    );
+    await api.put(`/storage/furniture/${furnitureId}/cells/${x}/${y}/order`, { order: newOrder });
+    refresh();
+  }
+  function move(index: number, dir: -1 | 1) {
+    if (!data) return;
+    const ids = data.releases.map((r) => r.id);
+    const j = index + dir;
+    if (j < 0 || j >= ids.length) return;
+    [ids[index], ids[j]] = [ids[j], ids[index]];
+    reorder(ids);
+  }
 
   return (
     <div className="card space-y-3 p-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-display text-lg font-bold">
-          Case C{x + 1}·R{y + 1}
-        </h2>
+        <h2 className="font-display text-lg font-bold">{title}</h2>
         <button onClick={onBack} className="text-sm text-mocha hover:text-accent">
           ← {furnitureName}
         </button>
@@ -422,8 +522,9 @@ function CellPanel({
         <>
           {data && data.releases.length > 0 ? (
             <ul className="space-y-1.5">
-              {data.releases.map((r) => (
+              {data.releases.map((r, i) => (
                 <li key={r.id} className="flex items-center gap-2">
+                  <span className="w-5 shrink-0 text-center text-xs font-semibold text-mocha/70">{r.position}</span>
                   {r.coverUrl ? (
                     <img src={r.coverUrl} alt="" className="h-9 w-9 rounded object-cover" />
                   ) : (
@@ -435,7 +536,25 @@ function CellPanel({
                     </Link>
                     <p className="truncate text-xs text-mocha">{r.artistDisplay}</p>
                   </div>
-                  <button onClick={() => unassign(r.id)} className="text-mocha hover:text-accent" title="Retirer">
+                  <div className="flex shrink-0 flex-col leading-none">
+                    <button
+                      onClick={() => move(i, -1)}
+                      disabled={i === 0}
+                      className="text-mocha hover:text-accent disabled:opacity-25"
+                      title="Monter"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      onClick={() => move(i, 1)}
+                      disabled={i === data.releases.length - 1}
+                      className="text-mocha hover:text-accent disabled:opacity-25"
+                      title="Descendre"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                  <button onClick={() => unassign(r.id)} className="shrink-0 text-mocha hover:text-accent" title="Retirer">
                     ✕
                   </button>
                 </li>

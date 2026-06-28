@@ -1,6 +1,6 @@
 import { Component, ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, ThreeEvent, useThree } from '@react-three/fiber';
-import { OrbitControls, Edges, useTexture } from '@react-three/drei';
+import { Canvas, ThreeEvent, useFrame, useThree } from '@react-three/fiber';
+import { OrbitControls, Edges, Html, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import type { Furniture, FurnitureCell } from '../api/types';
 import { resolveDrag } from '../lib/furniture';
@@ -27,6 +27,7 @@ interface Props {
   furniture: Furniture[];
   room: RoomDims;
   selectedId: string | null;
+  focus?: { id: string; x: number; y: number; nonce: number; coverUrl?: string; label?: string } | null;
   onSelectFurniture: (id: string | null) => void;
   onSelectCell: (f: Furniture, x: number, y: number) => void;
   onDragMove: (id: string, pos: PosPatch) => void;
@@ -50,24 +51,42 @@ function CoverTex({
   h,
   position,
   rotation,
+  proud,
 }: {
   url: string;
   w: number;
   h: number;
   position: [number, number, number];
   rotation?: [number, number, number];
+  proud?: boolean;
 }) {
   const tex = useTexture(url) as THREE.Texture;
   tex.colorSpace = THREE.SRGBColorSpace;
   return (
-    <mesh position={position} rotation={rotation} raycast={() => null}>
+    <mesh position={position} rotation={rotation} raycast={() => null} renderOrder={proud ? 20 : 0}>
       <planeGeometry args={[w, h]} />
-      <meshStandardMaterial map={tex} roughness={0.65} side={THREE.DoubleSide} />
+      {/* `proud` pulls the sleeve toward the camera (polygon offset) so the
+          popped cover never z-fights with the carcass/shelf behind it. */}
+      <meshStandardMaterial
+        map={tex}
+        roughness={0.65}
+        side={THREE.DoubleSide}
+        polygonOffset={proud}
+        polygonOffsetFactor={proud ? -4 : 0}
+        polygonOffsetUnits={proud ? -4 : 0}
+      />
     </mesh>
   );
 }
 
-function Cover(props: { url: string; w: number; h: number; position: [number, number, number]; rotation?: [number, number, number] }) {
+function Cover(props: {
+  url: string;
+  w: number;
+  h: number;
+  position: [number, number, number];
+  rotation?: [number, number, number];
+  proud?: boolean;
+}) {
   return (
     <CoverBoundary>
       <Suspense fallback={null}>
@@ -129,10 +148,12 @@ function SpineRow({
   depth: number;
   z?: number;
 }) {
-  const cap = Math.max(0, Math.floor(width / SPINE_PITCH));
-  const n = Math.min(count, cap, 80);
+  const n = Math.min(count, 300);
   if (n <= 0) return null;
-  const span = (n - 1) * SPINE_PITCH;
+  // Pack left→right; once the records would overflow the width they SHRINK to
+  // fit (pitch + thickness scale down) so nothing ever sticks out of the piece.
+  const pitch = Math.min(SPINE_PITCH, width / n);
+  const t = Math.min(SPINE_T, pitch * 0.82);
   return (
     <>
       {Array.from({ length: n }, (_, i) => (
@@ -140,10 +161,10 @@ function SpineRow({
           key={i}
           url={covers[i]}
           color={KRAFT[(i * 7) % KRAFT.length]}
-          t={SPINE_T}
+          t={t}
           h={height}
           d={depth}
-          position={[-span / 2 + i * SPINE_PITCH, baseY + height / 2, z]}
+          position={[-width / 2 + pitch * (i + 0.5), baseY + height / 2, z]}
         />
       ))}
     </>
@@ -162,6 +183,116 @@ function BinCovers({ covers, baseY, sleeve, depth }: { covers: string[]; baseY: 
       })}
     </>
   );
+}
+
+type PopMode = 'spine' | 'top' | 'face';
+
+/**
+ * The located disc, sliding out of its slot to point itself out, with a label
+ * chip above it once it's out. The motion depends on how the disc is stored:
+ *  - 'top'  : rises straight up out of a bin (BAC / a tower's top bin)
+ *  - 'spine': slides out edge-first then rotates to reveal the cover (filed
+ *             spine-out: cubes, tower cubbies, shelf, vitrine)
+ *  - 'face' : slides forward (already shown face-out: frame, easel)
+ */
+function PoppedCover({
+  url,
+  label,
+  mode,
+  sleeve,
+  px,
+  py,
+  z,
+}: {
+  url: string;
+  label?: string;
+  mode: PopMode;
+  sleeve: number;
+  px: number;
+  py: number;
+  z: number;
+}) {
+  const ref = useRef<THREE.Group>(null);
+  const inner = useRef<THREE.Group>(null);
+  const t0 = useRef(performance.now());
+  const [labelOn, setLabelOn] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setLabelOn(true), 720);
+    return () => clearTimeout(t);
+  }, []);
+  // A constant clearance so the sleeve never sits on the carcass plane.
+  const OUT = 0.06;
+  const ease = (k: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, k)), 3);
+  useFrame(() => {
+    if (!ref.current || !inner.current) return;
+    const p = Math.min(1, (performance.now() - t0.current) / 750);
+    if (mode === 'top') {
+      const e = ease(p);
+      ref.current.position.set(px, py + e * (sleeve * 0.7 + 0.1), z + OUT);
+      inner.current.rotation.set(0, 0, 0);
+    } else if (mode === 'face') {
+      const e = ease(p);
+      ref.current.position.set(px, py + e * 0.05, z + OUT + e * 0.18);
+      inner.current.rotation.set(0, 0, 0);
+    } else {
+      // spine: pull fully out FIRST, then rotate from edge-on to face the viewer
+      // (so the sleeve is already clear of the shelf before it turns).
+      const slide = ease(p / 0.55);
+      const turn = ease((p - 0.45) / 0.55);
+      ref.current.position.set(px, py + slide * 0.05, z + OUT + slide * 0.26);
+      inner.current.rotation.set(0, (1 - turn) * 1.45, 0);
+    }
+  });
+  return (
+    <group ref={ref} position={[px, py, z + OUT]}>
+      <group ref={inner}>
+        <Cover url={url} w={sleeve} h={sleeve} position={[0, 0, 0]} proud />
+        {/* thin backing, well behind the cover so the two never z-fight */}
+        <mesh position={[0, 0, -0.03]} raycast={() => null} renderOrder={19}>
+          <boxGeometry args={[sleeve * 0.98, sleeve * 0.98, 0.012]} />
+          <meshStandardMaterial color="#e7dcc4" />
+        </mesh>
+      </group>
+      {label && labelOn && (
+        <Html position={[0, sleeve / 2 + 0.12, 0]} center distanceFactor={4} zIndexRange={[100, 0]}>
+          <div
+            style={{
+              background: '#211b14',
+              color: '#faf5ea',
+              padding: '3px 10px',
+              borderRadius: 9999,
+              fontSize: 13,
+              fontWeight: 600,
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              boxShadow: '0 6px 16px rgba(0,0,0,0.35)',
+            }}
+          >
+            📍 {label}
+          </div>
+        </Html>
+      )}
+    </group>
+  );
+}
+
+/** Local anchor of a cell (where a popped sleeve appears) + its pop mode, per type. */
+function cellAnchor(f: Furniture, x: number, y: number): { px: number; py: number; z: number; sleeve: number; mode: PopMode } {
+  const frontZ = f.depth / 2;
+  if (f.type === 'TOWER') {
+    const nCub = Math.max(1, f.rows - 1);
+    const binH = f.height / f.rows;
+    const bottomH = f.height - binH;
+    const cubbyH = bottomH / nCub;
+    if (y >= nCub) return { px: 0, py: bottomH + binH / 2, z: frontZ, sleeve: Math.min(f.width, f.depth) * 0.8, mode: 'top' };
+    return { px: 0, py: cubbyH * y + cubbyH / 2, z: frontZ, sleeve: Math.min(f.width * 0.86, cubbyH * 0.82), mode: 'spine' };
+  }
+  if (f.type === 'BAC') return { px: 0, py: f.height * 0.55, z: frontZ, sleeve: Math.min(f.width, f.depth) * 0.8, mode: 'top' };
+  if (f.type === 'FRAME') return { px: 0, py: f.height / 2, z: frontZ, sleeve: Math.min(f.width, f.height) * 0.7, mode: 'face' };
+  if (f.type === 'CHEVALET') return { px: 0, py: f.height * 0.7, z: 0.18, sleeve: Math.min(f.width, f.height) * 0.9, mode: 'face' };
+  // grid types filed spine-out (CUBES / CUBE / VITRINE / SHELF)
+  const c = cellLayout(f).find((cb) => cb.x === x && cb.y === y) ?? cellLayout(f)[0];
+  return { px: c.px, py: c.py, z: frontZ, sleeve: Math.min(c.cw, c.ch) * 0.82, mode: 'spine' };
 }
 
 // A thin wood panel.
@@ -206,11 +337,13 @@ interface PieceProps {
   rotY: number;
   selected: boolean;
   hoverCell: string | null;
+  flashCell: string | null;
+  popped: { key: string; coverUrl: string; label?: string } | null;
   onBodyDown: (f: Furniture, e: ThreeEvent<PointerEvent>, cell: { x: number; y: number } | null) => void;
   onHoverCell: (key: string | null) => void;
 }
 
-function FurniturePiece({ f, pos, rotY, selected, hoverCell, onBodyDown, onHoverCell }: PieceProps) {
+function FurniturePiece({ f, pos, rotY, selected, hoverCell, flashCell, popped, onBodyDown, onHoverCell }: PieceProps) {
   const cells = useMemo(() => cellLayout(f), [f.width, f.height, f.columns, f.rows]);
   const cellFor = (x: number, y: number): FurnitureCell | undefined =>
     f.cells.find((c) => c.cellX === x && c.cellY === y);
@@ -219,6 +352,7 @@ function FurniturePiece({ f, pos, rotY, selected, hoverCell, onBodyDown, onHover
   // A transparent click/hover target over one cell's front face.
   const Target = ({ x, y, px, py, w, h, z = frontZ + 0.01 }: { x: number; y: number; px: number; py: number; w: number; h: number; z?: number }) => {
     const key = `${f.id}:${x}:${y}`;
+    const flash = flashCell === key;
     return (
       <mesh
         position={[px, py, z]}
@@ -230,7 +364,12 @@ function FurniturePiece({ f, pos, rotY, selected, hoverCell, onBodyDown, onHover
         onPointerOut={() => onHoverCell(null)}
       >
         <planeGeometry args={[w, h]} />
-        <meshStandardMaterial color={HOVER} transparent opacity={hoverCell === key ? 0.28 : 0} depthWrite={false} />
+        <meshStandardMaterial
+          color={flash ? SELECT : HOVER}
+          transparent
+          opacity={flash ? 0.55 : hoverCell === key ? 0.28 : 0}
+          depthWrite={false}
+        />
       </mesh>
     );
   };
@@ -447,7 +586,12 @@ function FurniturePiece({ f, pos, rotY, selected, hoverCell, onBodyDown, onHover
                 onPointerOut={() => onHoverCell(null)}
               >
                 <planeGeometry args={[s, s]} />
-                <meshStandardMaterial color={HOVER} transparent opacity={hoverCell === `${f.id}:0:0` ? 0.28 : 0} depthWrite={false} />
+                <meshStandardMaterial
+                  color={flashCell === `${f.id}:0:0` ? SELECT : HOVER}
+                  transparent
+                  opacity={flashCell === `${f.id}:0:0` ? 0.55 : hoverCell === `${f.id}:0:0` ? 0.28 : 0}
+                  depthWrite={false}
+                />
               </mesh>
             </group>
           </group>
@@ -503,9 +647,20 @@ function FurniturePiece({ f, pos, rotY, selected, hoverCell, onBodyDown, onHover
     }
   })();
 
+  // The located disc's sleeve, sliding out of its slot.
+  let poppedNode = null;
+  if (popped && popped.key.startsWith(`${f.id}:`)) {
+    const [, sx, sy] = popped.key.split(':');
+    const a = cellAnchor(f, Number(sx), Number(sy));
+    poppedNode = (
+      <PoppedCover url={popped.coverUrl} label={popped.label} mode={a.mode} sleeve={a.sleeve} px={a.px} py={a.py} z={a.z} />
+    );
+  }
+
   return (
     <group position={pos} rotation={[0, rotY, 0]}>
       {content}
+      {poppedNode}
       {selected && (
         <mesh position={[0, f.height / 2, 0]} raycast={() => null}>
           <boxGeometry args={[f.width * 1.04, f.height * 1.04, f.depth * 1.04]} />
@@ -525,9 +680,11 @@ function placement(f: Furniture, room: RoomDims): { pos: [number, number, number
   return { pos: [f.posX, f.posY, f.posZ], rotY: rad(f.rotation) };
 }
 
-function Scene({ furniture, room, selectedId, onSelectFurniture, onSelectCell, onDragMove, onDragEnd }: Props) {
+function Scene({ furniture, room, selectedId, focus, onSelectFurniture, onSelectCell, onDragMove, onDragEnd }: Props) {
   const { camera, gl } = useThree();
   const controls = useRef<any>(null);
+  const [flashCell, setFlashCell] = useState<string | null>(null);
+  const [popped, setPopped] = useState<{ key: string; coverUrl: string; label?: string } | null>(null);
   const drag = useRef<
     | {
         id: string;
@@ -537,6 +694,7 @@ function Scene({ furniture, room, selectedId, onSelectFurniture, onSelectCell, o
         sx: number;
         sy: number;
         moved: boolean;
+        locked: boolean;
         cell: { x: number; y: number } | null;
       }
     | null
@@ -577,15 +735,18 @@ function Scene({ furniture, room, selectedId, onSelectFurniture, onSelectCell, o
       sx: (e.nativeEvent as PointerEvent).clientX,
       sy: (e.nativeEvent as PointerEvent).clientY,
       moved: false,
+      locked: !!f.locked,
       cell,
     };
-    if (controls.current) controls.current.enabled = false;
+    // Locked pieces can still be selected / have cells opened, but never moved,
+    // so the camera controls stay live and dragging does nothing.
+    if (!f.locked && controls.current) controls.current.enabled = false;
   };
 
   useEffect(() => {
     const move = (ev: PointerEvent) => {
       const d = drag.current;
-      if (!d) return;
+      if (!d || d.locked) return; // locked: never moves
       if (!d.moved && Math.hypot(ev.clientX - d.sx, ev.clientY - d.sy) > 5) d.moved = true;
       if (!d.moved) return;
       const pt = rayTo(ev, d.plane);
@@ -629,6 +790,28 @@ function Scene({ furniture, room, selectedId, onSelectFurniture, onSelectCell, o
     };
   }, [hoverCell]);
 
+  // Deep-link focus: frame the camera on a piece's cell and flash it briefly.
+  useEffect(() => {
+    if (!focus) return;
+    const f = furniture.find((x) => x.id === focus.id);
+    if (!f || !controls.current) return;
+    const place = placement(f, room);
+    const center = new THREE.Vector3(place.pos[0], place.pos[1] + f.height / 2, place.pos[2]);
+    controls.current.target.copy(center);
+    const dist = Math.max(f.width, f.height, f.depth, 0.8) * 2.4 + 0.7;
+    camera.position.set(center.x + dist * 0.55, center.y + dist * 0.5, center.z + dist);
+    controls.current.update();
+    const key = `${focus.id}:${focus.x}:${focus.y}`;
+    setFlashCell(key);
+    if (focus.coverUrl) setPopped({ key, coverUrl: focus.coverUrl, label: focus.label });
+    const t = setTimeout(() => {
+      setFlashCell(null);
+      setPopped(null);
+    }, 5000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus?.nonce]);
+
   const maxSpan = Math.max(room.width, room.depth);
 
   // Apply mount placement to each piece before rendering.
@@ -670,6 +853,8 @@ function Scene({ furniture, room, selectedId, onSelectFurniture, onSelectCell, o
           rotY={rotY}
           selected={f.id === selectedId}
           hoverCell={hoverCell}
+          flashCell={flashCell}
+          popped={popped}
           onBodyDown={onBodyDown}
           onHoverCell={setHoverCell}
         />

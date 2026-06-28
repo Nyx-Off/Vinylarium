@@ -20,6 +20,28 @@ export const DEFAULT_SIZE: Record<FurnitureType, { width: number; height: number
 const rad = (d: number) => (d * Math.PI) / 180;
 export const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+/**
+ * Human cell label by furniture role, e.g. "Tour vinyles 1 · bac",
+ * "Vitrine · étagère 2", "Kallax · colonne 2 · rangée 1". Rows/shelves are
+ * counted from the TOP (1 = highest, the natural reading order), columns
+ * left→right; a single-cell piece is just its name. Mirror this in the backend.
+ */
+export function cellLabel(f: { name: string; type: FurnitureType; columns: number; rows: number }, x: number, y: number): string {
+  if (f.type === 'TOWER') {
+    const nCub = Math.max(1, f.rows - 1);
+    return y >= nCub ? `${f.name} · bac` : `${f.name} · casier ${nCub - y}`;
+  }
+  if (f.type === 'VITRINE' && f.rows > 1) return `${f.name} · étagère ${f.rows - y}`;
+  if (f.type === 'CUBES') {
+    const parts: string[] = [];
+    if (f.columns > 1) parts.push(`colonne ${x + 1}`);
+    if (f.rows > 1) parts.push(`rangée ${f.rows - y}`);
+    return parts.length ? `${f.name} · ${parts.join(' · ')}` : f.name;
+  }
+  // CUBE / BAC / SHELF / CHEVALET / FRAME and single-row vitrines: one cell.
+  return f.name;
+}
+
 export interface Room {
   width: number;
   depth: number;

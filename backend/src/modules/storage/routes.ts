@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../db/prisma';
 import { badRequest, notFound } from '../../lib/errors';
 import { coverUrlOf } from '../releases/serialize';
+import { cellLabel } from '../../lib/storage-cells';
 
 const partsSchema = {
   label: z.string().trim().max(200).optional(),
@@ -63,6 +64,7 @@ function serializeFurniture(f: any) {
     columns: f.columns,
     rows: f.rows,
     color: f.color,
+    locked: f.locked,
     sortOrder: f.sortOrder,
     // Cells that actually hold records (created on demand), keyed by grid index.
     cells: (f.cells ?? []).map((c: any) => ({
@@ -86,7 +88,10 @@ const cellsInclude = {
       _count: { select: { releases: true } },
       releases: {
         take: COVERS_PER_CELL,
-        orderBy: [{ artistDisplay: 'asc' as const }, { year: 'asc' as const }],
+        orderBy: [
+          { storagePosition: { sort: 'asc' as const, nulls: 'last' as const } },
+          { artistDisplay: 'asc' as const },
+        ],
         select: { coverPath: true, thumbUrl: true },
       },
     },
@@ -256,6 +261,7 @@ export async function storageRoutes(app: FastifyInstance) {
         columns: z.number().int().min(1).max(20).optional(),
         rows: z.number().int().min(1).max(20).optional(),
         color: z.string().trim().max(20).nullish(),
+        locked: z.boolean().optional(),
         sortOrder: z.number().int().optional(),
       })
       .parse(req.body);
@@ -264,24 +270,12 @@ export async function storageRoutes(app: FastifyInstance) {
 
     const newCols = body.columns ?? existing.columns;
     const newRows = body.rows ?? existing.rows;
-    // Shrinking the grid orphans out-of-range cells: drop the empty ones and
-    // detach (keep) any that still hold records so assignments aren't lost.
+    // Shrinking the grid removes the out-of-range cells; the discs they held are
+    // unassigned by the FK (ON DELETE SET NULL) rather than left as ghost cells.
     if (newCols < existing.columns || newRows < existing.rows) {
-      const outOfRange = await prisma.storageLocation.findMany({
-        where: {
-          furnitureId: id,
-          OR: [{ cellX: { gte: newCols } }, { cellY: { gte: newRows } }],
-        },
-        include: { _count: { select: { releases: true } } },
+      await prisma.storageLocation.deleteMany({
+        where: { furnitureId: id, OR: [{ cellX: { gte: newCols } }, { cellY: { gte: newRows } }] },
       });
-      const emptyIds = outOfRange.filter((c) => c._count.releases === 0).map((c) => c.id);
-      const keepIds = outOfRange.filter((c) => c._count.releases > 0).map((c) => c.id);
-      if (emptyIds.length) await prisma.storageLocation.deleteMany({ where: { id: { in: emptyIds } } });
-      if (keepIds.length)
-        await prisma.storageLocation.updateMany({
-          where: { id: { in: keepIds } },
-          data: { furnitureId: null, cellX: null, cellY: null },
-        });
     }
 
     const updated = await prisma.furniture.update({
@@ -300,6 +294,7 @@ export async function storageRoutes(app: FastifyInstance) {
         columns: body.columns ?? undefined,
         rows: body.rows ?? undefined,
         color: body.color === undefined ? undefined : body.color,
+        locked: body.locked ?? undefined,
         sortOrder: body.sortOrder ?? undefined,
       },
       include: cellsInclude,
@@ -311,14 +306,10 @@ export async function storageRoutes(app: FastifyInstance) {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const exists = await prisma.furniture.findUnique({ where: { id } });
     if (!exists) throw notFound('Furniture not found');
-    // Empty cells vanish with the piece; cells holding records are detached
-    // (FK is ON DELETE SET NULL) so the records stay "stored somewhere".
-    const cells = await prisma.storageLocation.findMany({
-      where: { furnitureId: id },
-      include: { _count: { select: { releases: true } } },
-    });
-    const emptyIds = cells.filter((c) => c._count.releases === 0).map((c) => c.id);
-    if (emptyIds.length) await prisma.storageLocation.deleteMany({ where: { id: { in: emptyIds } } });
+    // Delete every cell with the piece — the discs they held are unassigned by
+    // the FK (ON DELETE SET NULL), not left behind as ghost locations pointing
+    // to furniture that no longer exists.
+    await prisma.storageLocation.deleteMany({ where: { furnitureId: id } });
     await prisma.furniture.delete({ where: { id } });
     return reply.status(204).send();
   });
@@ -335,7 +326,7 @@ export async function storageRoutes(app: FastifyInstance) {
     if (existing) return existing;
     return prisma.storageLocation.create({
       data: {
-        label: `${f.name} · C${cellX + 1}R${cellY + 1}`,
+        label: cellLabel(f, cellX, cellY),
         furnitureId,
         cellX,
         cellY,
@@ -349,6 +340,18 @@ export async function storageRoutes(app: FastifyInstance) {
     y: z.coerce.number().int().min(0),
   });
 
+  /** Renumber a cell's discs to a contiguous 1..N (their current order). */
+  async function resequence(cellId: string) {
+    const rels = await prisma.release.findMany({
+      where: { storageLocationId: cellId },
+      orderBy: [{ storagePosition: { sort: 'asc', nulls: 'last' } }, { artistDisplay: 'asc' }],
+      select: { id: true },
+    });
+    await prisma.$transaction(
+      rels.map((r, i) => prisma.release.update({ where: { id: r.id }, data: { storagePosition: i + 1 } })),
+    );
+  }
+
   app.get('/furniture/:id/cells/:x/:y', async (req) => {
     const { id, x, y } = cellParams.parse(req.params);
     const cell = await prisma.storageLocation.findFirst({
@@ -357,7 +360,7 @@ export async function storageRoutes(app: FastifyInstance) {
     if (!cell) return { cell: null, releases: [] };
     const releases = await prisma.release.findMany({
       where: { storageLocationId: cell.id },
-      orderBy: [{ artistDisplay: 'asc' }, { year: 'asc' }],
+      orderBy: [{ storagePosition: { sort: 'asc', nulls: 'last' } }, { artistDisplay: 'asc' }],
       select: {
         id: true,
         title: true,
@@ -365,18 +368,18 @@ export async function storageRoutes(app: FastifyInstance) {
         year: true,
         coverPath: true,
         thumbUrl: true,
-        storageSlot: true,
+        storagePosition: true,
       },
     });
     return {
       cell: { id: cell.id, label: cell.label, note: cell.note },
-      releases: releases.map((r) => ({
+      releases: releases.map((r, i) => ({
         id: r.id,
         title: r.title,
         artistDisplay: r.artistDisplay,
         year: r.year,
         coverUrl: coverUrlOf(r),
-        storageSlot: r.storageSlot,
+        position: r.storagePosition ?? i + 1,
       })),
     };
   });
@@ -387,11 +390,34 @@ export async function storageRoutes(app: FastifyInstance) {
     const release = await prisma.release.findUnique({ where: { id: releaseId } });
     if (!release) throw notFound('Release not found');
     const cell = await getOrCreateCell(id, x, y);
+    // Append at the end (null sorts last), then renumber to keep it tidy.
     await prisma.release.update({
       where: { id: releaseId },
-      data: { storageLocationId: cell.id },
+      data: { storageLocationId: cell.id, storagePosition: null },
     });
+    await resequence(cell.id);
     return { ok: true, cellId: cell.id };
+  });
+
+  // Reorder the discs of a cell (body: releaseIds in the wanted order).
+  app.put('/furniture/:id/cells/:x/:y/order', async (req) => {
+    const { id, x, y } = cellParams.parse(req.params);
+    const { order } = z.object({ order: z.array(z.string()) }).parse(req.body);
+    const cell = await prisma.storageLocation.findFirst({
+      where: { furnitureId: id, cellX: x, cellY: y },
+    });
+    if (!cell) throw notFound('Cell not found');
+    const valid = new Set(
+      (await prisma.release.findMany({ where: { storageLocationId: cell.id }, select: { id: true } })).map((r) => r.id),
+    );
+    let pos = 1;
+    await prisma.$transaction(
+      order
+        .filter((rid) => valid.has(rid))
+        .map((rid) => prisma.release.update({ where: { id: rid }, data: { storagePosition: pos++ } })),
+    );
+    await resequence(cell.id); // fold in anything not listed, keep contiguous
+    return { ok: true };
   });
 
   app.delete('/furniture/:id/cells/:x/:y/releases/:releaseId', async (req, reply) => {
@@ -403,11 +429,12 @@ export async function storageRoutes(app: FastifyInstance) {
     if (cell) {
       await prisma.release.updateMany({
         where: { id: releaseId, storageLocationId: cell.id },
-        data: { storageLocationId: null },
+        data: { storageLocationId: null, storagePosition: null },
       });
       // Drop the cell location once it is empty so the grid stays clean.
       const remaining = await prisma.release.count({ where: { storageLocationId: cell.id } });
       if (remaining === 0) await prisma.storageLocation.delete({ where: { id: cell.id } }).catch(() => {});
+      else await resequence(cell.id);
     }
     return reply.status(204).send();
   });

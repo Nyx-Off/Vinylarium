@@ -184,7 +184,8 @@ model Release {
 
   // Physical storage
   storageLocationId String?
-  storageSlot       String? // position within a bin ("14", "B-3", ...)
+  storageSlot       String? // free-text position within a bin ("14", "B-3", ...)
+  storagePosition   Int? // order within the 3D-furniture cell (1 = first, left/front)
 
   addedByUserId String?
 
@@ -587,6 +588,7 @@ model Furniture {
   columns Int @default(2)
   rows    Int @default(2)
   color   String? // hex tint for the carcass, optional
+  locked  Boolean @default(false) // when true, can't be moved/resized by dragging
   sortOrder Int   @default(0)
 
   createdAt DateTime @default(now())

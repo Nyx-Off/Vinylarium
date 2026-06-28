@@ -506,10 +506,22 @@ export default function ReleaseDetailPage() {
           {(r.storage || r.collectionFolder) && (
             <Section title="Rangement">
               {r.storage ? (
-                <p className="text-sm">
-                  📍 {r.storage.label}
-                  {r.storage.slot ? ` · position ${r.storage.slot}` : ''}
-                </p>
+                r.storage.furnitureId ? (
+                  <Link
+                    to={`/storage?locate=${r.storage.id}${r.coverUrl ? `&cover=${encodeURIComponent(r.coverUrl)}` : ''}`}
+                    className="group inline-flex items-center gap-1 text-sm text-accent hover:underline"
+                    title="Voir l'emplacement dans le rangement 3D"
+                  >
+                    📍 {r.storage.label}
+                    {r.storage.position ? ` · emplacement ${r.storage.position}` : ''}
+                    <span className="text-mocha group-hover:text-accent"> — voir dans la pièce →</span>
+                  </Link>
+                ) : (
+                  <p className="text-sm">
+                    📍 {r.storage.label}
+                    {r.storage.slot ? ` · position ${r.storage.slot}` : ''}
+                  </p>
+                )
               ) : (
                 <p className="text-sm text-mocha">Dossier Discogs : {r.collectionFolder}</p>
               )}
