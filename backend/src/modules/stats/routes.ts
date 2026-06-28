@@ -41,7 +41,7 @@ export async function statsRoutes(app: FastifyInstance) {
     // Genius
     const geniusConfigured = Boolean(config.genius.accessToken);
 
-    const [discogsOk, geniusOk, musicbrainzOk] = await Promise.all([
+    const [discogsOk, geniusOk, musicbrainzOk, lrclibOk] = await Promise.all([
       probe('https://api.discogs.com/', discogsHeaders),
       geniusConfigured
         ? probe('https://api.genius.com/search?q=test', {
@@ -52,6 +52,11 @@ export async function statsRoutes(app: FastifyInstance) {
       probe('https://musicbrainz.org/ws/2/artist/89ad4ac3-39f7-470e-963a-56509c546377?fmt=json', {
         'User-Agent': config.musicbrainz.userAgent,
         Accept: 'application/json',
+      }),
+      // LRCLIB needs no key — just a polite User-Agent. Probe the service root
+      // (the API paths can be slow/rate-limited; root is a reliable up signal).
+      probe('https://lrclib.net/', {
+        'User-Agent': 'Vinylarium (+https://github.com/Nyx-Off/Vinylarium)',
       }),
     ]);
 
@@ -83,6 +88,12 @@ export async function statsRoutes(app: FastifyInstance) {
         detail: musicbrainzOk
           ? 'Connecté — origine des artistes activée'
           : 'Injoignable',
+      },
+      {
+        name: 'LRCLIB',
+        configured: true, // free, keyless — complements Genius for lyrics
+        ok: lrclibOk,
+        detail: lrclibOk ? 'Connecté — paroles complémentaires (sans clé)' : 'Injoignable',
       },
     ];
 

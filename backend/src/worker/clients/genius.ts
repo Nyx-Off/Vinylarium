@@ -47,6 +47,42 @@ const stripParens = (s: string) => s.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, 
 const overlaps = (wanted: string, got: string) =>
   wanted.length > 0 && got.length > 0 && (got.includes(wanted) || wanted.includes(got));
 
+/**
+ * Genius song-page slug, e.g. ("Lee Michaels", "Do You Know What I Mean") →
+ * "Lee-michaels-do-you-know-what-i-mean". The page URL is deterministic, so we
+ * can hit it directly when search fails to surface an indexed song.
+ */
+function geniusSlug(artist: string, title: string): string {
+  const s = `${artist} ${title}`
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/['’]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Title spellings to try when building a direct URL — Discogs and Genius often
+ * differ on informal forms ("Do Ya Know" vs "Do You Know") or parentheticals.
+ */
+function titleVariants(title: string): string[] {
+  const out = new Set<string>([title.trim()]);
+  const noParens = stripParens(title);
+  if (noParens) out.add(noParens);
+  for (const base of [...out]) {
+    const swapped = base
+      .replace(/\bya\b/gi, 'you')
+      .replace(/\b'?cause\b/gi, 'because')
+      .replace(/\b'?til\b/gi, 'until');
+    if (swapped !== base) out.add(swapped);
+  }
+  return [...out].filter((t) => t.length > 0);
+}
+
 /** A candidate Genius song, kept with how strongly it matched so the best wins. */
 interface ScoredHit extends GeniusHit {
   songId: number;
@@ -254,6 +290,95 @@ async function scrape(url: string): Promise<string | null> {
   return text.length > 0 ? text : null;
 }
 
+/**
+ * Last resort when search finds nothing: Genius's search API regularly fails to
+ * surface an indexed song (older catalogue, niche artists) even though its page
+ * exists at a deterministic URL. Build that URL from the artist + title (trying
+ * a few spelling variants) and scrape it directly. A 404 just returns null, so
+ * a wrong guess never yields wrong lyrics.
+ */
+async function fetchBySlug(artist: string, title: string): Promise<{ text: string; url: string } | null> {
+  const lead = cleanArtist(artist);
+  const seen = new Set<string>();
+  for (const variant of titleVariants(title)) {
+    const url = `https://genius.com/${geniusSlug(lead, variant)}-lyrics`;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const text = await scrape(url); // null on 404, throws on 429
+    if (text) return { text, url };
+  }
+  return null;
+}
+
+/** Significant words of a title, for fuzzy comparison. */
+const tokenSet = (s: string) => new Set(normalize(stripParens(s)).split(' ').filter((w) => w.length > 1));
+
+const artistSongsCache = new Map<string, { title: string; url: string }[]>();
+
+/**
+ * Every song Genius lists for an artist (cached per worker process). The search
+ * API regularly fails to surface an indexed song, but the artist's catalogue is
+ * authoritative — listing it lets us match a title Genius spells differently
+ * ("Carnival Of My Life" vs "Carnival Of Life") that no slug guess would hit.
+ */
+async function getArtistSongs(artist: string): Promise<{ title: string; url: string }[]> {
+  const key = normalize(cleanArtist(artist));
+  if (!key) return [];
+  const cached = artistSongsCache.get(key);
+  if (cached) return cached;
+
+  let artistId: number | null = null;
+  for (const hit of await rawSearch(cleanArtist(artist))) {
+    if (normalize(hit.result?.primary_artist?.name ?? '') === key) {
+      artistId = hit.result.primary_artist.id;
+      break;
+    }
+  }
+  const songs: { title: string; url: string }[] = [];
+  let page: number | null = artistId ? 1 : null;
+  for (let guard = 0; page && guard < 8; guard++) {
+    const data = await apiGet(`/artists/${artistId}/songs?per_page=50&page=${page}&sort=title`);
+    for (const s of data?.response?.songs ?? []) {
+      if (s?.url && s?.title && normalize(s.primary_artist?.name ?? '') === key)
+        songs.push({ title: s.title, url: s.url });
+    }
+    page = data?.response?.next_page ?? null;
+  }
+  artistSongsCache.set(key, songs);
+  return songs;
+}
+
+/** Match a title against the artist's Genius catalogue (fuzzy) and scrape it. */
+async function fetchFromCatalogue(artist: string, title: string): Promise<{ text: string; url: string } | null> {
+  const songs = await getArtistSongs(artist);
+  if (songs.length === 0) return null;
+  const want = tokenSet(title);
+  if (want.size === 0) return null;
+  const nTitle = normalize(title);
+  const nBase = normalize(stripParens(title));
+
+  let best: { title: string; url: string } | null = null;
+  let bestScore = 0;
+  for (const s of songs) {
+    const exact = nTitle === normalize(s.title) || (nBase.length >= 4 && nBase === normalize(stripParens(s.title)));
+    let score: number;
+    if (exact) score = 1;
+    else {
+      const got = tokenSet(s.title);
+      let inter = 0;
+      for (const w of want) if (got.has(w)) inter++;
+      score = inter / (want.size + got.size - inter); // Jaccard
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = s;
+    }
+  }
+  if (!best || bestScore < 0.6) return null; // no lyrics beats a wrong match
+  const text = await scrape(best.url);
+  return text ? { text, url: best.url } : null;
+}
+
 export interface GeniusAlbumInfo {
   name: string;
   url: string;
@@ -293,7 +418,10 @@ export const genius = {
     album?: string,
   ): Promise<{ text: string; url: string } | null> {
     const candidates = await searchScored(artist, title);
-    if (candidates.length === 0) return null;
+    // Genius search sometimes misses an indexed song entirely — fall back to its
+    // canonical page URL, then to fuzzy-matching the artist's catalogue.
+    if (candidates.length === 0)
+      return (await fetchBySlug(artist, title)) ?? (await fetchFromCatalogue(artist, title));
 
     let chosen = candidates[0];
     const wantedAlbum = album ? normalize(stripParens(album)) : '';
@@ -319,7 +447,10 @@ export const genius = {
     }
 
     const text = await scrape(chosen.url);
-    return text ? { text, url: chosen.url } : null;
+    if (text) return { text, url: chosen.url };
+    // The search hit's page yielded nothing — try the canonical URL, then the
+    // artist's catalogue, as backups.
+    return (await fetchBySlug(artist, title)) ?? (await fetchFromCatalogue(artist, title));
   },
 
   /**

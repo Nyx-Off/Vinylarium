@@ -1,6 +1,7 @@
 import { prisma } from '../../db/prisma';
 import { isPlaceholderArtist } from '../../lib/text';
 import { genius, GeniusRateLimitError } from '../clients/genius';
+import { lrclib } from '../clients/lrclib';
 import { processAlbumAnecdote } from './anecdote';
 
 const MAX_TRACKS = 40;
@@ -45,17 +46,31 @@ export async function processLyrics(releaseId: string): Promise<void> {
 
   // Collect everything first, then replace in one transaction: the old rows
   // must never be deleted on the strength of a fetch that produced nothing.
-  const found: { trackId: string; text: string; url: string }[] = [];
+  const found: { trackId: string; text: string; url: string; source: 'GENIUS' | 'LRCLIB' }[] = [];
   for (const track of tracks) {
     try {
       // Compilations bill the release as "Various"; the per-track artist (when
-      // Discogs provides one) is the real one to search Genius with.
+      // Discogs provides one) is the real one to search with.
       const trackArtist = track.artistDisplay?.trim() || release.artistDisplay;
-      // Without a real artist, Genius matches a literal "Various"/"Unknown
+      // Without a real artist, search matches a literal "Various"/"Unknown
       // Artist" page and returns junk — skip (no request, no delay needed).
       if (isPlaceholderArtist(trackArtist)) continue;
       const hit = await genius.getLyrics(trackArtist, track.title, release.title);
-      if (hit) found.push({ trackId: track.id, text: hit.text, url: hit.url });
+      if (hit) {
+        found.push({ trackId: track.id, text: hit.text, url: hit.url, source: 'GENIUS' });
+      } else {
+        // LRCLIB complements Genius: matched on artist+title+album+duration, it
+        // often has songs Genius lacks. Best-effort; failures are ignored.
+        const lrc = await lrclib
+          .getLyrics({
+            artist: trackArtist,
+            title: track.title,
+            album: release.title,
+            durationSec: track.durationSec,
+          })
+          .catch(() => null);
+        if (lrc) found.push({ trackId: track.id, text: lrc.text, url: lrc.url, source: 'LRCLIB' });
+      }
     } catch (e) {
       if (e instanceof GeniusRateLimitError) throw e;
       // ignore a single track failure
@@ -63,16 +78,17 @@ export async function processLyrics(releaseId: string): Promise<void> {
     await sleep(GAP_MS);
   }
 
-  // Replace only Genius-sourced lyrics so re-runs don't pile up duplicates.
+  // Replace auto-sourced lyrics (Genius + LRCLIB) so re-runs don't pile up
+  // duplicates; manually entered lyrics are left untouched.
   await prisma.$transaction([
-    prisma.lyrics.deleteMany({ where: { releaseId, source: 'GENIUS' } }),
+    prisma.lyrics.deleteMany({ where: { releaseId, source: { in: ['GENIUS', 'LRCLIB'] } } }),
     ...found.map((f) =>
       prisma.lyrics.create({
         data: {
           releaseId,
           trackId: f.trackId,
           text: f.text,
-          source: 'GENIUS',
+          source: f.source,
           sourceUrl: f.url,
         },
       }),
