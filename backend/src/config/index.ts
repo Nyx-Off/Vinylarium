@@ -56,6 +56,14 @@ export const config = {
     translateTo: optional('ANECDOTE_LANG', 'fr'),
   },
 
+  spotify: {
+    // One server-side Spotify app; each USER connects their own account via the
+    // OAuth Authorization Code flow. Register the app + its redirect URI at
+    // https://developer.spotify.com. Admin-overridable from Settings.
+    clientId: optional('SPOTIFY_CLIENT_ID'),
+    clientSecret: optional('SPOTIFY_CLIENT_SECRET'),
+  },
+
   update: {
     // GitHub repo the daily/manual update check compares against.
     repo: optional('UPDATE_REPO', 'Nyx-Off/Vinylarium'),

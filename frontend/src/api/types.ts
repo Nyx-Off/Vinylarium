@@ -333,6 +333,26 @@ export interface ArtistDetail {
   appearsOn: (ReleaseListItem & { roles: string[] })[];
 }
 
+// ── Spotify ───────────────────────────────────────────────────────────────────
+
+export interface SpotifyStatus {
+  configured: boolean;
+  connected: boolean;
+  name: string | null;
+}
+
+export interface SpotifyNowPlaying {
+  connected: boolean;
+  playing: boolean;
+  title?: string;
+  artist?: string;
+  album?: string;
+  coverUrl?: string | null;
+  trackUrl?: string | null;
+  progressMs?: number;
+  durationMs?: number;
+}
+
 // ── System update ────────────────────────────────────────────────────────────
 
 export interface UpdateCommit {

@@ -8,6 +8,7 @@ import {
   useReenrichStatus,
   useSystemVersion,
   useImportJob,
+  useSpotifyStatus,
 } from '../api/hooks';
 import { useAuth } from '../lib/auth';
 import {
@@ -18,6 +19,7 @@ import {
   resolveFeatures,
 } from '../lib/features';
 import { Integration, ImportJob, UpdateStatus } from '../api/types';
+import { NowPlayingCard } from '../components/NowPlaying';
 
 export default function SettingsPage() {
   const { user, refresh } = useAuth();
@@ -114,8 +116,13 @@ export default function SettingsPage() {
   }
 
   // Server API keys (enrichment) — admin only, layered over .env.
-  const [apiKeys, setApiKeys] = useState({ discogsToken: '', geniusAccessToken: '' });
-  const [apiEnv, setApiEnv] = useState({ discogs: false, genius: false });
+  const [apiKeys, setApiKeys] = useState({
+    discogsToken: '',
+    geniusAccessToken: '',
+    spotifyClientId: '',
+    spotifyClientSecret: '',
+  });
+  const [apiEnv, setApiEnv] = useState({ discogs: false, genius: false, spotify: false });
   const [apiKeysLoaded, setApiKeysLoaded] = useState(false);
   const [apiMsg, setApiMsg] = useState('');
   const [apiBusy, setApiBusy] = useState(false);
@@ -123,11 +130,20 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!user?.isAdmin) return;
     api
-      .get<{ discogsToken: string; geniusAccessToken: string; envConfigured: { discogs: boolean; genius: boolean } }>(
-        '/system/api-keys',
-      )
+      .get<{
+        discogsToken: string;
+        geniusAccessToken: string;
+        spotifyClientId: string;
+        spotifyClientSecret: string;
+        envConfigured: { discogs: boolean; genius: boolean; spotify: boolean };
+      }>('/system/api-keys')
       .then(({ data }) => {
-        setApiKeys({ discogsToken: data.discogsToken, geniusAccessToken: data.geniusAccessToken });
+        setApiKeys({
+          discogsToken: data.discogsToken,
+          geniusAccessToken: data.geniusAccessToken,
+          spotifyClientId: data.spotifyClientId,
+          spotifyClientSecret: data.spotifyClientSecret,
+        });
         setApiEnv(data.envConfigured);
         setApiKeysLoaded(true);
       })
@@ -146,6 +162,28 @@ export default function SettingsPage() {
     } finally {
       setApiBusy(false);
     }
+  }
+
+  // Spotify (per-user OAuth connection).
+  const { data: spotify } = useSpotifyStatus();
+  const [spotifyMsg, setSpotifyMsg] = useState('');
+  async function connectSpotify() {
+    setSpotifyMsg('');
+    try {
+      const redirectUri = `${window.location.origin}/spotify/callback`;
+      const { data } = await api.get<{ url: string; state: string }>('/spotify/auth-url', {
+        params: { redirectUri },
+      });
+      localStorage.setItem('spotify_state', data.state);
+      window.location.href = data.url;
+    } catch (e) {
+      setSpotifyMsg(errorMessage(e));
+    }
+  }
+  async function disconnectSpotify() {
+    await api.post('/spotify/disconnect');
+    qc.invalidateQueries({ queryKey: ['spotify-status'] });
+    qc.invalidateQueries({ queryKey: ['spotify-now'] });
   }
 
   // Discogs collection sync (API, no CSV): launch then poll the ImportJob.
@@ -724,6 +762,37 @@ export default function SettingsPage() {
       </section>
 
       <section className="card p-6">
+        <h2 className="mb-1 font-display text-xl font-bold text-ink">Spotify</h2>
+        <p className="mb-4 text-sm text-mocha">
+          Connectez votre compte pour afficher « en cours d'écoute » et lancer un vinyle depuis sa
+          fiche (lecture sur un appareil Spotify actif — nécessite Spotify Premium).
+        </p>
+        {!spotify?.configured ? (
+          <p className="rounded-xl bg-ink/5 px-4 py-3 text-sm text-mocha">
+            Spotify n'est pas encore configuré sur le serveur (Client ID/Secret à renseigner par un
+            administrateur dans « État des API »).
+          </p>
+        ) : spotify.connected ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="chip bg-emerald-500/15 text-emerald-700">
+                ✓ Connecté{spotify.name ? ` — ${spotify.name}` : ''}
+              </span>
+              <button onClick={disconnectSpotify} className="btn-outline">
+                Déconnecter
+              </button>
+            </div>
+            <NowPlayingCard />
+          </div>
+        ) : (
+          <button onClick={connectSpotify} className="btn-primary">
+            Connecter mon compte Spotify
+          </button>
+        )}
+        {spotifyMsg && <p className="mt-2 text-sm text-accent">{spotifyMsg}</p>}
+      </section>
+
+      <section className="card p-6">
         <h2 className="mb-4 font-display text-xl font-bold text-ink">État des API</h2>
         {integrationsLoading ? (
           <p className="text-sm text-mocha">Vérification…</p>
@@ -761,7 +830,30 @@ export default function SettingsPage() {
                   placeholder={apiEnv.genius ? 'défini dans .env — vide = le garder' : 'genius.com/api-clients'}
                 />
               </div>
+              <div>
+                <label className="label">Spotify — Client ID</label>
+                <input
+                  className="input"
+                  value={apiKeys.spotifyClientId}
+                  onChange={(e) => setApiKeys((k) => ({ ...k, spotifyClientId: e.target.value }))}
+                  placeholder={apiEnv.spotify ? 'défini dans .env — vide = le garder' : 'developer.spotify.com'}
+                />
+              </div>
+              <div>
+                <label className="label">Spotify — Client Secret</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={apiKeys.spotifyClientSecret}
+                  onChange={(e) => setApiKeys((k) => ({ ...k, spotifyClientSecret: e.target.value }))}
+                  placeholder={apiEnv.spotify ? 'défini dans .env — vide = le garder' : 'Client Secret de l’app Spotify'}
+                />
+              </div>
             </div>
+            <p className="mt-2 text-xs text-mocha">
+              Spotify : créez une app sur developer.spotify.com et ajoutez l'URL de redirection{' '}
+              <code className="rounded bg-ink/10 px-1">{`${window.location.origin}/spotify/callback`}</code>.
+            </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <button onClick={saveApiKeys} disabled={apiBusy} className="btn-primary">
                 {apiBusy ? '…' : 'Enregistrer les clés'}

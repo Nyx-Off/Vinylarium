@@ -135,4 +135,19 @@
   .animate-fadeup {
     animation: fade-up 450ms ease-out;
   }
+
+  /* Spotify "now playing" — little dancing equalizer bars. */
+  @keyframes eq-bar {
+    0%,
+    100% {
+      transform: scaleY(0.35);
+    }
+    50% {
+      transform: scaleY(1);
+    }
+  }
+  .animate-eq {
+    transform-origin: bottom;
+    animation: eq-bar 0.9s ease-in-out infinite;
+  }
 }

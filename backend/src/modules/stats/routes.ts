@@ -5,6 +5,7 @@ import { config } from '../../config';
 import { fetchWithTimeout } from '../../lib/http';
 import { geoForCountry, geoForISO } from '../../lib/countries';
 import { mediaUrl } from '../../lib/storage';
+import { spotifyConfigured } from '../../lib/spotify';
 
 type IntegrationStatus = {
   name: string;
@@ -94,6 +95,15 @@ export async function statsRoutes(app: FastifyInstance) {
         configured: true, // free, keyless — complements Genius for lyrics
         ok: lrclibOk,
         detail: lrclibOk ? 'Connecté — paroles complémentaires (sans clé)' : 'Injoignable',
+      },
+      {
+        name: 'Spotify',
+        configured: spotifyConfigured(),
+        // App-level only: per-user connection happens in each profile's settings.
+        ok: spotifyConfigured(),
+        detail: spotifyConfigured()
+          ? 'Configuré — connectez votre compte dans Paramètres'
+          : 'Clés API manquantes (Client ID/Secret)',
       },
     ];
 

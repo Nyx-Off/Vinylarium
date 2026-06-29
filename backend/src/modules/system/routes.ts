@@ -58,6 +58,8 @@ export async function systemRoutes(app: FastifyInstance) {
     return {
       discogsToken: overrides.discogsToken ?? '',
       geniusAccessToken: overrides.geniusAccessToken ?? '',
+      spotifyClientId: overrides.spotifyClientId ?? '',
+      spotifyClientSecret: overrides.spotifyClientSecret ?? '',
       envConfigured: envConfigured(),
     };
   });
@@ -68,11 +70,15 @@ export async function systemRoutes(app: FastifyInstance) {
       .object({
         discogsToken: z.string().trim().max(200).optional(),
         geniusAccessToken: z.string().trim().max(300).optional(),
+        spotifyClientId: z.string().trim().max(200).optional(),
+        spotifyClientSecret: z.string().trim().max(200).optional(),
       })
       .parse(req.body);
     await saveApiKeyOverrides({
       discogsToken: body.discogsToken || undefined,
       geniusAccessToken: body.geniusAccessToken || undefined,
+      spotifyClientId: body.spotifyClientId || undefined,
+      spotifyClientSecret: body.spotifyClientSecret || undefined,
     });
     // The API uses the new keys immediately; the worker re-reads them within
     // a minute (its Discogs rate limiter stays at the boot value until the

@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { FeatureKey, useFeatures } from '../lib/features';
 import { Me } from '../api/types';
+import { NowPlayingPill } from './NowPlaying';
 
 type NavItem = { to: string; label: string; icon?: string; feature?: FeatureKey };
 
@@ -98,6 +99,7 @@ export function Layout() {
             ))}
           </nav>
           <div className="flex flex-1 items-center justify-end gap-1 md:flex-initial">
+            <NowPlayingPill />
             <Link
               to="/settings"
               className="flex items-center gap-2 rounded-full bg-ink/5 px-2 py-1 hover:bg-ink/10"

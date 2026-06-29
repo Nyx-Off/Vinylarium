@@ -15,6 +15,8 @@ export const API_KEYS_SETTING = 'apiKeys';
 export interface ApiKeyOverrides {
   discogsToken?: string;
   geniusAccessToken?: string;
+  spotifyClientId?: string;
+  spotifyClientSecret?: string;
 }
 
 // .env values captured once at module load — the fallback when an override
@@ -22,12 +24,15 @@ export interface ApiKeyOverrides {
 const envDefaults = {
   discogsToken: config.discogs.token,
   geniusAccessToken: config.genius.accessToken,
+  spotifyClientId: config.spotify.clientId,
+  spotifyClientSecret: config.spotify.clientSecret,
 };
 
 export function envConfigured() {
   return {
     discogs: Boolean(envDefaults.discogsToken),
     genius: Boolean(envDefaults.geniusAccessToken),
+    spotify: Boolean(envDefaults.spotifyClientId && envDefaults.spotifyClientSecret),
   };
 }
 
@@ -51,7 +56,13 @@ export async function applyApiKeyOverrides(): Promise<void> {
   const v = await readApiKeyOverrides();
   // `config` is typed readonly but is a plain object; this module is the one
   // sanctioned place that rewrites it.
-  const cfg = config as { discogs: { token: string }; genius: { accessToken: string } };
+  const cfg = config as {
+    discogs: { token: string };
+    genius: { accessToken: string };
+    spotify: { clientId: string; clientSecret: string };
+  };
   cfg.discogs.token = v.discogsToken?.trim() || envDefaults.discogsToken;
   cfg.genius.accessToken = v.geniusAccessToken?.trim() || envDefaults.geniusAccessToken;
+  cfg.spotify.clientId = v.spotifyClientId?.trim() || envDefaults.spotifyClientId;
+  cfg.spotify.clientSecret = v.spotifyClientSecret?.trim() || envDefaults.spotifyClientSecret;
 }

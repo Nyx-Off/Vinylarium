@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, errorMessage } from '../api/client';
-import { useRelease, useStorageLocations } from '../api/hooks';
+import { useRelease, useSpotifyStatus, useStorageLocations } from '../api/hooks';
 import { Credit, ReleaseDetail } from '../api/types';
 import { Cover } from '../components/Cover';
 import { Lightbox } from '../components/Lightbox';
@@ -49,12 +49,16 @@ export default function ReleaseDetailPage() {
   const qc = useQueryClient();
   const { data: r, isLoading } = useRelease(id);
   const { data: locations } = useStorageLocations();
+  const { data: spotify } = useSpotifyStatus();
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ storageLocationId: '', storageSlot: '', tags: '', notes: '' });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [zoom, setZoom] = useState<number | null>(null); // index into `gallery`
+  const [spotifyMsg, setSpotifyMsg] = useState('');
+  const [spotifyLink, setSpotifyLink] = useState<string | null>(null);
+  const [spotifyBusy, setSpotifyBusy] = useState(false);
 
   useEffect(() => {
     if (r) {
@@ -140,6 +144,43 @@ export default function ReleaseDetailPage() {
       setMsg(errorMessage(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  // Start this album on the user's active Spotify device. Friendly fallbacks
+  // for the usual snags (no device, no Premium, album not found → open search).
+  async function playOnSpotify() {
+    setSpotifyBusy(true);
+    setSpotifyMsg('');
+    setSpotifyLink(null);
+    try {
+      type PlayResponse =
+        | { ok: true; uri?: string }
+        | {
+            ok: false;
+            reason: 'not_connected' | 'not_found' | 'no_device' | 'premium' | 'error';
+            searchUrl?: string;
+          };
+      const { data } = await api.post<PlayResponse>('/spotify/play', { releaseId: id });
+      if (data.ok) {
+        setSpotifyMsg('▶ Lecture lancée sur Spotify.');
+        qc.invalidateQueries({ queryKey: ['spotify-now'] });
+      } else {
+        const labels: Record<string, string> = {
+          not_connected: 'Connectez d’abord votre compte Spotify (Paramètres).',
+          not_found: 'Album introuvable sur Spotify.',
+          no_device:
+            'Aucun appareil Spotify actif — ouvrez Spotify (téléphone, ordinateur, enceinte) puis réessayez.',
+          premium: 'La lecture à distance nécessite un compte Spotify Premium.',
+          error: 'Lecture impossible pour le moment.',
+        };
+        setSpotifyMsg(labels[data.reason] ?? 'Lecture impossible.');
+        if (data.searchUrl) setSpotifyLink(data.searchUrl);
+      }
+    } catch (e) {
+      setSpotifyMsg(errorMessage(e));
+    } finally {
+      setSpotifyBusy(false);
     }
   }
 
@@ -242,6 +283,35 @@ export default function ReleaseDetailPage() {
           <Link to={`/showcase/${r.id}`} className="btn-primary w-full justify-center text-center">
             ✦ Mode vitrine
           </Link>
+          {spotify?.connected && (
+            <div className="space-y-2">
+              <button
+                onClick={playOnSpotify}
+                disabled={spotifyBusy}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1DB954] px-4 py-2 font-semibold text-white transition-colors hover:bg-[#1aa34a] disabled:opacity-60"
+              >
+                {spotifyBusy ? '…' : '▶ Jouer sur Spotify'}
+              </button>
+              {spotifyMsg && (
+                <p className="text-xs text-mocha">
+                  {spotifyMsg}
+                  {spotifyLink && (
+                    <>
+                      {' '}
+                      <a
+                        href={spotifyLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-accent underline"
+                      >
+                        Ouvrir la recherche Spotify ↗
+                      </a>
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
+          )}
           <div className="flex flex-wrap gap-2">
             {r.discogsUri && (
               <a href={r.discogsUri} target="_blank" rel="noreferrer" className="btn-outline text-xs">

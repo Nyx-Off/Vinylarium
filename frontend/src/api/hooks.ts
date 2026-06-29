@@ -105,6 +105,22 @@ export function useRoom() {
   });
 }
 
+export function useSpotifyStatus() {
+  return useQuery({
+    queryKey: ['spotify-status'],
+    queryFn: async () => (await api.get<T.SpotifyStatus>('/spotify/status')).data,
+  });
+}
+
+export function useNowPlaying(enabled: boolean) {
+  return useQuery({
+    enabled,
+    queryKey: ['spotify-now'],
+    queryFn: async () => (await api.get<T.SpotifyNowPlaying>('/spotify/now-playing')).data,
+    refetchInterval: enabled ? 8000 : false,
+  });
+}
+
 export function useImportJobs() {
   return useQuery({
     queryKey: ['imports'],

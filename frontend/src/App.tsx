@@ -15,6 +15,7 @@ import SettingsPage from './pages/SettingsPage';
 import MapPage from './pages/MapPage';
 import TimelinePage from './pages/TimelinePage';
 import ShowcasePage from './pages/ShowcasePage';
+import SpotifyCallbackPage from './pages/SpotifyCallbackPage';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -64,6 +65,7 @@ export default function App() {
         <Route path="/import" element={<ImportPage />} />
         <Route path="/add" element={<ManualAddPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/spotify/callback" element={<SpotifyCallbackPage />} />
         <Route path="*" element={<Navigate to="/library" replace />} />
       </Route>
     </Routes>

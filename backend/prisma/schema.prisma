@@ -114,6 +114,13 @@ model User {
   // through the Discogs API (Settings → "Récupérer ma collection").
   discogsUsername String?
   discogsToken    String?
+  // Per-user Spotify OAuth (Authorization Code flow): the refresh token is the
+  // durable credential; the access token is cached with its expiry.
+  spotifyRefreshToken  String?
+  spotifyAccessToken   String?
+  spotifyTokenExpires  DateTime?
+  spotifyId            String?
+  spotifyName          String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
