@@ -6,6 +6,7 @@ import { prisma } from '../../db/prisma';
 import { badRequest } from '../../lib/errors';
 import {
   buildAuthUrl,
+  control,
   exchangeCode,
   findAlbum,
   findTrackUri,
@@ -137,5 +138,16 @@ export async function spotifyRoutes(app: FastifyInstance) {
     if (!album) return { ok: false, reason: 'not_found' as const, searchUrl };
     const result = await play(token, { context_uri: album.uri });
     return result.ok ? { ok: true } : { ok: false, reason: result.reason, searchUrl };
+  });
+
+  // Transport controls for the active device (used by the showcase player).
+  app.post('/control', async (req) => {
+    const { action } = z
+      .object({ action: z.enum(['next', 'previous', 'pause', 'resume']) })
+      .parse(req.body);
+    const token = await getValidAccessToken(req.user.sub);
+    if (!token) return { ok: false, reason: 'not_connected' as const };
+    const result = await control(token, action);
+    return result.ok ? { ok: true } : { ok: false, reason: result.reason };
   });
 }

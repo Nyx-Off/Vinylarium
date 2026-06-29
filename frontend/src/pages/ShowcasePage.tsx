@@ -1,8 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useRelease } from '../api/hooks';
+import { useQueryClient } from '@tanstack/react-query';
+import { useNowPlaying, useRelease, useSpotifyStatus } from '../api/hooks';
+import { api, errorMessage } from '../api/client';
 import { Cover } from '../components/Cover';
 import { Spinner } from '../components/Spinner';
+
+// Crisp transport icons (currentColor) — no emoji coloring, on-theme.
+const TransportIcon = ({ d, className = 'h-5 w-5' }: { d: string; className?: string }) => (
+  <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
+    <path d={d} />
+  </svg>
+);
+const ICON = {
+  prev: 'M6 6h2v12H6zM18 6v12l-8.5-6z',
+  next: 'M6 6l8.5 6L6 18zM16 6h2v12h-2z',
+  play: 'M8 5v14l11-7z',
+  pause: 'M6 5h4v14H6zM14 5h4v14h-4z',
+};
 
 // Degrees of sleeve rotation per pixel of drag.
 const DRAG_FACTOR = 0.6;
@@ -31,6 +46,56 @@ export default function ShowcasePage() {
     samples: { t: number; x: number }[];
   } | null>(null);
   const [spinUi, setSpinUi] = useState(true);
+
+  // ── Spotify transport (only when an account is connected) ────────────────
+  const qc = useQueryClient();
+  const { data: spotify } = useSpotifyStatus();
+  const connected = Boolean(spotify?.connected);
+  const { data: np } = useNowPlaying(connected);
+  const playing = Boolean(np?.playing);
+  const hasContext = Boolean(np?.title); // a track is loaded (playing or paused)
+  const [spBusy, setSpBusy] = useState<string | null>(null);
+  const [spMsg, setSpMsg] = useState('');
+
+  async function runSpotify(key: string, req: () => Promise<{ data: any }>) {
+    setSpBusy(key);
+    setSpMsg('');
+    try {
+      const { data } = await req();
+      if (data?.ok === false) {
+        const labels: Record<string, string> = {
+          not_connected: 'Connectez votre compte Spotify dans les Paramètres.',
+          not_found: 'Introuvable sur Spotify.',
+          no_device: 'Aucun appareil Spotify actif — ouvrez Spotify puis réessayez.',
+          premium: 'Spotify Premium requis pour la lecture à distance.',
+          error: 'Action impossible pour le moment.',
+        };
+        setSpMsg(labels[data.reason ?? 'error'] ?? 'Action impossible.');
+      }
+      qc.invalidateQueries({ queryKey: ['spotify-now'] });
+      // Spotify lags a moment after a skip — refetch once more to catch up.
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['spotify-now'] }), 800);
+    } catch (e) {
+      setSpMsg(errorMessage(e));
+    } finally {
+      setSpBusy(null);
+    }
+  }
+
+  function togglePlay() {
+    if (playing) return runSpotify('playpause', () => api.post('/spotify/control', { action: 'pause' }));
+    if (hasContext) return runSpotify('playpause', () => api.post('/spotify/control', { action: 'resume' }));
+    // Nothing loaded → start THIS record.
+    return runSpotify('playpause', () => api.post('/spotify/play', { releaseId: id }));
+  }
+  const skip = (action: 'next' | 'previous') =>
+    runSpotify(action, () => api.post('/spotify/control', { action }));
+
+  useEffect(() => {
+    if (!spMsg) return;
+    const t = setTimeout(() => setSpMsg(''), 4500);
+    return () => clearTimeout(t);
+  }, [spMsg]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && navigate(`/release/${id}`);
@@ -143,14 +208,69 @@ export default function ShowcasePage() {
             {r.year ? ` · ${r.year}` : ''}
           </p>
 
+          {/* Spotify transport — only when an account is connected */}
+          {connected && (
+            <div className="mt-6 flex flex-col items-center gap-3">
+              {np?.title && (
+                <div className="flex items-center gap-2 text-xs text-cream/55">
+                  {playing && (
+                    <span className="flex h-3 items-end gap-[2px]" aria-hidden>
+                      {[0, 1, 2].map((i) => (
+                        <span
+                          key={i}
+                          className="w-[2px] animate-eq rounded-full bg-cream/70"
+                          style={{ height: '100%', animationDelay: `${i * 0.18}s` }}
+                        />
+                      ))}
+                    </span>
+                  )}
+                  <span className="max-w-[70vw] truncate">
+                    {np.title}
+                    {np.artist ? ` — ${np.artist}` : ''}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center gap-2 rounded-full border border-cream/10 bg-cream/5 px-3 py-2 backdrop-blur">
+                <button
+                  onClick={() => skip('previous')}
+                  disabled={spBusy !== null}
+                  title="Précédent"
+                  aria-label="Précédent"
+                  className="flex h-11 w-11 items-center justify-center rounded-full text-cream/80 transition-colors hover:bg-cream/10 disabled:opacity-40"
+                >
+                  <TransportIcon d={ICON.prev} />
+                </button>
+                <button
+                  onClick={togglePlay}
+                  disabled={spBusy !== null}
+                  title={playing ? 'Pause' : 'Lecture'}
+                  aria-label={playing ? 'Pause' : 'Lecture'}
+                  className="flex h-14 w-14 items-center justify-center rounded-full bg-[#1DB954] text-white shadow-lg transition-transform hover:scale-105 disabled:opacity-60"
+                >
+                  <TransportIcon className="h-7 w-7" d={playing ? ICON.pause : ICON.play} />
+                </button>
+                <button
+                  onClick={() => skip('next')}
+                  disabled={spBusy !== null}
+                  title="Suivant"
+                  aria-label="Suivant"
+                  className="flex h-11 w-11 items-center justify-center rounded-full text-cream/80 transition-colors hover:bg-cream/10 disabled:opacity-40"
+                >
+                  <TransportIcon d={ICON.next} />
+                </button>
+              </div>
+              {spMsg && <p className="max-w-[80vw] text-center text-xs text-cream/70">{spMsg}</p>}
+            </div>
+          )}
+
           <button
             onClick={() => {
               spin.current = !spin.current;
               setSpinUi(spin.current);
             }}
-            className="mt-5 rounded-full bg-cream/10 px-4 py-1.5 text-sm text-cream/80 hover:bg-cream/20"
+            className="mt-5 rounded-full bg-cream/10 px-4 py-1.5 text-xs text-cream/70 hover:bg-cream/20"
           >
-            {spinUi ? '⏸ Pause' : '▶ Tourner'}
+            {spinUi ? 'Figer la pochette' : '↻ Faire tourner'}
           </button>
         </>
       )}

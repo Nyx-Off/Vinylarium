@@ -260,3 +260,21 @@ export async function play(token: string, body: Record<string, unknown>): Promis
   if (res.status === 403) return { ok: false, reason: 'premium' }; // Premium required
   return { ok: false, reason: 'error' };
 }
+
+export type ControlAction = 'next' | 'previous' | 'pause' | 'resume';
+
+/** Transport control on the user's active device (next/previous/pause/resume). */
+export async function control(token: string, action: ControlAction): Promise<PlayResult> {
+  const route: Record<ControlAction, { method: string; path: string }> = {
+    next: { method: 'POST', path: '/me/player/next' },
+    previous: { method: 'POST', path: '/me/player/previous' },
+    pause: { method: 'PUT', path: '/me/player/pause' },
+    resume: { method: 'PUT', path: '/me/player/play' }, // resume current context
+  };
+  const { method, path } = route[action];
+  const res = await apiFetch(token, path, { method });
+  if (res.ok || res.status === 204) return { ok: true };
+  if (res.status === 404) return { ok: false, reason: 'no_device' };
+  if (res.status === 403) return { ok: false, reason: 'premium' };
+  return { ok: false, reason: 'error' };
+}
