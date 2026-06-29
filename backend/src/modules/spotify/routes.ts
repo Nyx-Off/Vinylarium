@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { config } from '../../config';
 import { prisma } from '../../db/prisma';
 import { badRequest } from '../../lib/errors';
 import {
@@ -27,6 +28,8 @@ export async function spotifyRoutes(app: FastifyInstance) {
       configured: spotifyConfigured(),
       connected: Boolean(user?.spotifyRefreshToken),
       name: user?.spotifyName ?? null,
+      // The redirect URI to register in the Spotify app (shown in Settings).
+      redirectUri: config.spotify.redirectUri,
     };
   });
 
@@ -34,18 +37,21 @@ export async function spotifyRoutes(app: FastifyInstance) {
   // `redirectUri` (a frontend route) with ?code&state.
   app.get('/auth-url', async (req) => {
     if (!spotifyConfigured()) throw badRequest('Spotify n’est pas configuré (clés API manquantes)');
-    const { redirectUri } = z.object({ redirectUri: z.string().url() }).parse(req.query);
-    const state = randomUUID();
-    return { url: buildAuthUrl(redirectUri, state), state };
+    // `returnUrl` is THIS instance's callback page (often http on a LAN). We pack
+    // it into `state` so the static relay page (the registered redirect_uri) can
+    // bounce the browser back here with the code — no HTTPS/tunnel needed locally.
+    const { returnUrl } = z.object({ returnUrl: z.string().url() }).parse(req.query);
+    const state = Buffer.from(JSON.stringify({ n: randomUUID(), r: returnUrl })).toString('base64url');
+    return { url: buildAuthUrl(state), state };
   });
 
   // Finish the flow: exchange the code, store the refresh token + profile.
   app.post('/callback', async (req) => {
     if (!spotifyConfigured()) throw badRequest('Spotify n’est pas configuré');
-    const { code, redirectUri } = z
-      .object({ code: z.string().min(1), redirectUri: z.string().url() })
-      .parse(req.body);
-    const tokens = await exchangeCode(code, redirectUri);
+    // redirect_uri for the exchange must match the one used at authorize time —
+    // that's the configured relay (config.spotify.redirectUri), not this URL.
+    const { code } = z.object({ code: z.string().min(1) }).parse(req.body);
+    const tokens = await exchangeCode(code);
     if (!tokens?.refresh_token) throw badRequest('Connexion Spotify refusée ou expirée, réessayez');
     const profile = await getProfile(tokens.access_token);
     await prisma.user.update({

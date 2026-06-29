@@ -28,10 +28,7 @@ export default function SpotifyCallbackPage() {
     }
     (async () => {
       try {
-        await api.post('/spotify/callback', {
-          code,
-          redirectUri: `${window.location.origin}/spotify/callback`,
-        });
+        await api.post('/spotify/callback', { code });
         qc.invalidateQueries({ queryKey: ['spotify-status'] });
         qc.invalidateQueries({ queryKey: ['spotify-now'] });
         navigate('/settings', { replace: true });

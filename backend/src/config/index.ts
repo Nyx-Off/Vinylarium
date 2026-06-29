@@ -62,6 +62,15 @@ export const config = {
     // https://developer.spotify.com. Admin-overridable from Settings.
     clientId: optional('SPOTIFY_CLIENT_ID'),
     clientSecret: optional('SPOTIFY_CLIENT_SECRET'),
+    // The OAuth redirect URI registered in the Spotify app. Default: the
+    // project's static "relay" page (GitHub Pages) that bounces the browser
+    // back to this instance — so a LAN-only http install needs no HTTPS/tunnel
+    // (Spotify only allows https or 127.0.0.1 as a redirect, not a LAN IP).
+    // Override (e.g. with your own https domain's /spotify/callback) to skip the
+    // relay. `|| default` so an empty env var keeps the default.
+    redirectUri:
+      optional('SPOTIFY_REDIRECT_URI').trim() ||
+      'https://nyx-off.github.io/Vinylarium/spotify/',
   },
 
   update: {

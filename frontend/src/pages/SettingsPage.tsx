@@ -170,9 +170,11 @@ export default function SettingsPage() {
   async function connectSpotify() {
     setSpotifyMsg('');
     try {
-      const redirectUri = `${window.location.origin}/spotify/callback`;
+      // We pass OUR callback as returnUrl; Spotify redirects to the fixed relay
+      // page, which bounces the browser back here with the code (no tunnel/HTTPS).
+      const returnUrl = `${window.location.origin}/spotify/callback`;
       const { data } = await api.get<{ url: string; state: string }>('/spotify/auth-url', {
-        params: { redirectUri },
+        params: { returnUrl },
       });
       localStorage.setItem('spotify_state', data.state);
       window.location.href = data.url;
@@ -851,8 +853,10 @@ export default function SettingsPage() {
               </div>
             </div>
             <p className="mt-2 text-xs text-mocha">
-              Spotify : créez une app sur developer.spotify.com et ajoutez l'URL de redirection{' '}
-              <code className="rounded bg-ink/10 px-1">{`${window.location.origin}/spotify/callback`}</code>.
+              Spotify : créez une app sur developer.spotify.com et ajoutez <strong>exactement</strong>{' '}
+              cette URL de redirection (page-relais qui ramène automatiquement vers cette instance, même
+              en accès local) :{' '}
+              <code className="rounded bg-ink/10 px-1 break-all">{spotify?.redirectUri ?? '…'}</code>
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <button onClick={saveApiKeys} disabled={apiBusy} className="btn-primary">

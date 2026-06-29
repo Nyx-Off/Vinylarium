@@ -33,6 +33,7 @@ profils utilisateurs.
 - **Bibliothèque visuelle** — mur de pochettes, **piles par artiste** (des piles mal agencées vues du dessus, qu'on **éclate d'un coup de molette** pour voir chaque disque, ou d'un doigt sur mobile) ou **allée de bacs à vinyles** : des caisses en bois en 3D alignées sur une grille (~12 disques chacune, étiquetées selon le tri), toute la collection sur une seule page. On feuillette **de disque en disque et de bac en bac** comme chez un disquaire : le paquet se tient debout, les pochettes déjà vues basculent vers l'avant contre le rebord, le disque courant fait face — molette directement sur le bac sous la souris, glissement, flèches clavier, clic pour ouvrir la fiche. Bouton **« au hasard »** avec effet roulette.
 - **Fiches détaillées** — crédits regroupés (musiciens / chant / auteurs / production) avec le détail des instruments, **line-up du groupe à l'année du disque** (déduit des périodes MusicBrainz), tracklist, paroles, anecdotes, identifiants, versions (live, réédition, remaster…), notes, lien Discogs ; **galerie de toutes les images** (recto / verso / photos) avec visionneuse plein écran navigable.
 - **Mode vitrine** — affichage plein écran d'un disque, pochette en **objet 3D** qui tourne pour montrer recto/verso ; lancer la pochette au doigt lui donne de l'**inertie** (pensé tablette).
+- **Spotify** — connectez votre compte (**sans tunnel ni manip** : une page-relais ramène automatiquement vers votre instance, même en accès local `http://`) pour afficher le morceau **« en cours d'écoute »** (en-tête + profil) et lancer un vinyle sur un **appareil Spotify actif** depuis sa fiche (**▶ Jouer sur Spotify**). La lecture à distance nécessite Spotify **Premium** ; le « en cours d'écoute » fonctionne même en gratuit.
 - **Globe interactif** — globe « cartographie ancienne » manipulable (rotation, glisser, **zoom molette / pincement**), deux vues : **origine des artistes** (MusicBrainz) ou **pays de pressage** (Discogs) ; clic sur un pays pour filtrer.
 - **Frise chronologique** — la collection en **parcours de point en point** : chaque année est un point posé librement sur la toile (pas d'axe rectiligne), relié au suivant par une **courbe qui serpente**, et les pochettes **virevoltent** en nuage autour de leur année (animation suspendue au survol) ; accès rapide par décennie, molette ou glisser pour voyager du plus ancien au plus récent.
 - **Recherche croisée** — filtrez par artiste, instrument (« qui joue de la basse »), genre, style, label, pays, **format (33/45 tours, LP/EP/Single…)**, décennie, version, tag, emplacement, et par **données manquantes** (sans année, sans pochette, sans paroles, sans crédits… cumulables — pratique pour repérer ce qui reste à compléter). Tous les filtres et la page courante vivent dans l'URL : le bouton retour revient exactement où vous étiez.
@@ -148,6 +149,15 @@ Ou par **export CSV** : sur Discogs *Collection → Exporter*, puis **Paramètre
 | `GENIUS_ACCESS_TOKEN` | *Client Access Token* Genius (active les paroles) — https://genius.com/api-clients — modifiable aussi depuis Paramètres (admin) |
 | `ANECDOTE_LANG` | Langue de traduction des anecdotes d'album (défaut `fr` ; vide = anglais d'origine) |
 | `MUSICBRAINZ_USER_AGENT` | User-Agent MusicBrainz (origine des artistes ; lecture sans OAuth ni jeton) |
+| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | App Spotify (« en cours d'écoute » + lecture sur un appareil) — https://developer.spotify.com — modifiables aussi depuis Paramètres (admin) |
+| `SPOTIFY_REDIRECT_URI` | URI de redirection OAuth Spotify. **Vide = page-relais du projet** (GitHub Pages) qui renvoie automatiquement vers ton instance — aucune config HTTPS ni tunnel en accès local. À surcharger seulement si tu héberges le relais ou as un domaine HTTPS (`https://ton-domaine/spotify/callback`) |
+
+> **Spotify** : crée une app sur [developer.spotify.com](https://developer.spotify.com), ajoute dans
+> ses *Redirect URIs* **exactement** l'URL affichée dans *Paramètres → État des API* (par défaut la
+> page-relais du projet), colle Client ID/Secret au même endroit, puis chaque profil clique
+> *Paramètres → Connecter mon compte Spotify*. En *Development mode*, ajoute d'abord ton compte dans
+> *Dashboard → User Management*. La lecture à distance nécessite Spotify **Premium** + un appareil
+> actif ; le « en cours d'écoute » fonctionne même en gratuit.
 
 ## 🔄 Mise à jour
 

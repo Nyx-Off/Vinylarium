@@ -339,6 +339,7 @@ export interface SpotifyStatus {
   configured: boolean;
   connected: boolean;
   name: string | null;
+  redirectUri: string;
 }
 
 export interface SpotifyNowPlaying {

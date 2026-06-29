@@ -30,12 +30,12 @@ function basicAuth(): string {
   return Buffer.from(`${config.spotify.clientId}:${config.spotify.clientSecret}`).toString('base64');
 }
 
-export function buildAuthUrl(redirectUri: string, state: string): string {
+export function buildAuthUrl(state: string): string {
   const q = new URLSearchParams({
     response_type: 'code',
     client_id: config.spotify.clientId,
     scope: SPOTIFY_SCOPES,
-    redirect_uri: redirectUri,
+    redirect_uri: config.spotify.redirectUri,
     state,
     show_dialog: 'true',
   });
@@ -62,9 +62,13 @@ async function tokenRequest(body: URLSearchParams): Promise<TokenResponse | null
   return (await res.json()) as TokenResponse;
 }
 
-export function exchangeCode(code: string, redirectUri: string): Promise<TokenResponse | null> {
+export function exchangeCode(code: string): Promise<TokenResponse | null> {
   return tokenRequest(
-    new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri }),
+    new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: config.spotify.redirectUri,
+    }),
   );
 }
 
