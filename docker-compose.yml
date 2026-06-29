@@ -129,11 +129,22 @@ services:
       context: ./updater
     image: vinylarium-updater:local
     restart: unless-stopped
+    environment:
+      # Real HOST path of this checkout. The daemon runs git + `docker compose`
+      # from here so bind-mount sources (./.git, ./VERSION) and build contexts
+      # resolve to actual host paths. Without it, compose running INSIDE this
+      # container would send container paths like /repo/... to the host daemon,
+      # which silently creates EMPTY dirs and breaks the in-app version check.
+      HOST_DIR: ${PWD}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./:/repo
+      # Mount the checkout at its OWN host path (identical inside & outside the
+      # container) — see HOST_DIR above. Compose is always run from this repo
+      # root (docker compose up / scripts/update.sh both cd here), so ${PWD} is
+      # the deploy directory.
+      - ${PWD}:${PWD}
       - storage:/data
-    working_dir: /repo
+    working_dir: ${PWD}
     networks: [vinylarium]
 
 volumes:

@@ -4,5 +4,7 @@
 # this image.
 FROM docker:27-cli
 RUN apk add --no-cache bash git docker-cli-compose
-WORKDIR /repo
-CMD ["bash", "/repo/scripts/updater-daemon.sh"]
+# The daemon lives in the mounted checkout at $HOST_DIR (the real host path,
+# passed by compose) so it can run `docker compose` from a path that matches the
+# host. Falls back to /repo for older compose files that still mount there.
+CMD ["bash", "-c", "exec bash \"${HOST_DIR:-/repo}/scripts/updater-daemon.sh\""]

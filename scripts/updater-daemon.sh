@@ -3,8 +3,8 @@
 #
 # The API can't rebuild its own container, so it drops a flag file in the
 # shared storage volume (/data/update/request.json) and THIS process — which
-# has the host checkout mounted at /repo and the Docker socket — does the
-# actual work: git pull, compose build, compose up. Progress goes to
+# has the host checkout mounted at its real host path ($HOST_DIR) and the Docker
+# socket — does the actual work: git pull, compose build, compose up. Progress goes to
 # status.json + update.log, which the API serves back to the Settings page.
 #
 # Notes:
@@ -14,7 +14,12 @@
 #    mid-update. If updater/ changes, recreate it by hand (or via update.sh).
 set -u
 
-REPO_DIR=/repo
+# Host path of the deploy checkout (passed by compose as HOST_DIR). Running git
+# and `docker compose` from the REAL host path makes bind-mount sources
+# (./.git, ./VERSION) and build contexts resolve correctly even though THIS
+# compose runs inside a container — otherwise they'd resolve to /repo on the
+# host and Docker would create empty dirs, breaking the version check.
+REPO_DIR="${HOST_DIR:-/repo}"
 FLAG_DIR=/data/update
 REQUEST="$FLAG_DIR/request.json"
 STATUS="$FLAG_DIR/status.json"
