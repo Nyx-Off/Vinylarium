@@ -43,6 +43,24 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/** Status line for a Spotify play action (success, or an error + search link). */
+function SpotifyFeedback({ msg, link }: { msg: string; link: string | null }) {
+  if (!msg) return null;
+  return (
+    <p className="text-xs text-mocha">
+      {msg}
+      {link && (
+        <>
+          {' '}
+          <a href={link} target="_blank" rel="noreferrer" className="text-accent underline">
+            Ouvrir la recherche Spotify ↗
+          </a>
+        </>
+      )}
+    </p>
+  );
+}
+
 export default function ReleaseDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -58,7 +76,8 @@ export default function ReleaseDetailPage() {
   const [zoom, setZoom] = useState<number | null>(null); // index into `gallery`
   const [spotifyMsg, setSpotifyMsg] = useState('');
   const [spotifyLink, setSpotifyLink] = useState<string | null>(null);
-  const [spotifyBusy, setSpotifyBusy] = useState(false);
+  // null = idle, 'album' = album button busy, otherwise the track id being played.
+  const [spotifyBusyId, setSpotifyBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (r) {
@@ -147,28 +166,34 @@ export default function ReleaseDetailPage() {
     }
   }
 
-  // Start this album on the user's active Spotify device. Friendly fallbacks
-  // for the usual snags (no device, no Premium, album not found → open search).
-  async function playOnSpotify() {
-    setSpotifyBusy(true);
+  // Play on the user's active Spotify device: the whole album, or — with a
+  // trackId — start the album AT that track (or the track alone as a fallback).
+  // Friendly messages for the usual snags (no device, no Premium, not found).
+  async function playOnSpotify(trackId?: string, trackTitle?: string) {
+    setSpotifyBusyId(trackId ?? 'album');
     setSpotifyMsg('');
     setSpotifyLink(null);
     try {
       type PlayResponse =
-        | { ok: true; uri?: string }
+        | { ok: true }
         | {
             ok: false;
             reason: 'not_connected' | 'not_found' | 'no_device' | 'premium' | 'error';
             searchUrl?: string;
           };
-      const { data } = await api.post<PlayResponse>('/spotify/play', { releaseId: id });
+      const { data } = await api.post<PlayResponse>('/spotify/play', {
+        releaseId: id,
+        ...(trackId ? { trackId } : {}),
+      });
       if (data.ok) {
-        setSpotifyMsg('▶ Lecture lancée sur Spotify.');
+        setSpotifyMsg(
+          trackTitle ? `▶ Lecture de « ${trackTitle} » sur Spotify.` : '▶ Lecture lancée sur Spotify.',
+        );
         qc.invalidateQueries({ queryKey: ['spotify-now'] });
       } else {
         const labels: Record<string, string> = {
           not_connected: 'Connectez d’abord votre compte Spotify (Paramètres).',
-          not_found: 'Album introuvable sur Spotify.',
+          not_found: trackTitle ? 'Morceau introuvable sur Spotify.' : 'Album introuvable sur Spotify.',
           no_device:
             'Aucun appareil Spotify actif — ouvrez Spotify (téléphone, ordinateur, enceinte) puis réessayez.',
           premium: 'La lecture à distance nécessite un compte Spotify Premium.',
@@ -180,7 +205,7 @@ export default function ReleaseDetailPage() {
     } catch (e) {
       setSpotifyMsg(errorMessage(e));
     } finally {
-      setSpotifyBusy(false);
+      setSpotifyBusyId(null);
     }
   }
 
@@ -286,30 +311,16 @@ export default function ReleaseDetailPage() {
           {spotify?.connected && (
             <div className="space-y-2">
               <button
-                onClick={playOnSpotify}
-                disabled={spotifyBusy}
+                onClick={() => playOnSpotify()}
+                disabled={spotifyBusyId !== null}
                 className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1DB954] px-4 py-2 font-semibold text-white transition-colors hover:bg-[#1aa34a] disabled:opacity-60"
               >
-                {spotifyBusy ? '…' : '▶ Jouer sur Spotify'}
+                {spotifyBusyId === 'album' ? '…' : '▶ Jouer l’album sur Spotify'}
               </button>
-              {spotifyMsg && (
-                <p className="text-xs text-mocha">
-                  {spotifyMsg}
-                  {spotifyLink && (
-                    <>
-                      {' '}
-                      <a
-                        href={spotifyLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-accent underline"
-                      >
-                        Ouvrir la recherche Spotify ↗
-                      </a>
-                    </>
-                  )}
-                </p>
-              )}
+              <p className="text-center text-[11px] text-mocha/70">
+                ou ▶ sur un titre ci-contre pour démarrer là
+              </p>
+              <SpotifyFeedback msg={spotifyMsg} link={spotifyLink} />
             </div>
           )}
           <div className="flex flex-wrap gap-2">
@@ -483,9 +494,25 @@ export default function ReleaseDetailPage() {
                     <span className="w-10 shrink-0 font-mono text-xs text-mocha">{t.position}</span>
                     <span className="flex-1">{t.title}</span>
                     {t.duration && <span className="text-xs text-mocha">{t.duration}</span>}
+                    {spotify?.connected && (
+                      <button
+                        onClick={() => playOnSpotify(t.id, t.title)}
+                        disabled={spotifyBusyId !== null}
+                        title={`Jouer « ${t.title} » sur Spotify`}
+                        aria-label={`Jouer ${t.title} sur Spotify`}
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] text-[#1DB954] hover:bg-[#1DB954]/15 disabled:opacity-40"
+                      >
+                        {spotifyBusyId === t.id ? '…' : '▶'}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ol>
+              {spotify?.connected && (
+                <div className="mt-3">
+                  <SpotifyFeedback msg={spotifyMsg} link={spotifyLink} />
+                </div>
+              )}
             </Section>
           )}
 

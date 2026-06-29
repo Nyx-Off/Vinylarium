@@ -7,11 +7,14 @@ import { badRequest } from '../../lib/errors';
 import {
   buildAuthUrl,
   exchangeCode,
-  findAlbumUri,
+  findAlbum,
+  findTrackUri,
+  getAlbumTracks,
   getNowPlaying,
   getProfile,
   getValidAccessToken,
-  playContext,
+  matchAlbumTrackUri,
+  play,
   spotifyConfigured,
 } from '../../lib/spotify';
 
@@ -92,7 +95,9 @@ export async function spotifyRoutes(app: FastifyInstance) {
 
   // Start playing a release's album on the user's active device.
   app.post('/play', async (req) => {
-    const { releaseId } = z.object({ releaseId: z.string() }).parse(req.body);
+    const { releaseId, trackId } = z
+      .object({ releaseId: z.string(), trackId: z.string().optional() })
+      .parse(req.body);
     const token = await getValidAccessToken(req.user.sub);
     if (!token) return { ok: false, reason: 'not_connected' as const };
     const release = await prisma.release.findUnique({
@@ -101,13 +106,36 @@ export async function spotifyRoutes(app: FastifyInstance) {
     });
     if (!release) throw badRequest('Disque introuvable');
 
+    // A specific track was asked for → resolve its title from the release.
+    const track = trackId
+      ? await prisma.track.findFirst({ where: { id: trackId, releaseId }, select: { title: true } })
+      : null;
+
     const searchUrl = `https://open.spotify.com/search/${encodeURIComponent(
-      `${release.artistDisplay} ${release.title}`,
+      `${release.artistDisplay} ${track?.title ?? release.title}`,
     )}`;
-    const uri = await findAlbumUri(token, release.artistDisplay, release.title);
-    if (!uri) return { ok: false, reason: 'not_found' as const, searchUrl };
-    const result = await playContext(token, uri);
-    if (result.ok) return { ok: true, uri };
-    return { ok: false, reason: result.reason, searchUrl };
+    const album = await findAlbum(token, release.artistDisplay, release.title);
+
+    if (track) {
+      // Prefer starting the album AT the matched track (it keeps playing after);
+      // fall back to a standalone track search if the album/track can't be found.
+      let body: Record<string, unknown> | null = null;
+      if (album) {
+        const uri = matchAlbumTrackUri(await getAlbumTracks(token, album.id), track.title);
+        if (uri) body = { context_uri: album.uri, offset: { uri } };
+      }
+      if (!body) {
+        const uri = await findTrackUri(token, release.artistDisplay, track.title, release.title);
+        if (uri) body = { uris: [uri] };
+      }
+      if (!body) return { ok: false, reason: 'not_found' as const, searchUrl };
+      const result = await play(token, body);
+      return result.ok ? { ok: true } : { ok: false, reason: result.reason, searchUrl };
+    }
+
+    // Whole album.
+    if (!album) return { ok: false, reason: 'not_found' as const, searchUrl };
+    const result = await play(token, { context_uri: album.uri });
+    return result.ok ? { ok: true } : { ok: false, reason: result.reason, searchUrl };
   });
 }

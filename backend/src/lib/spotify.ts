@@ -151,34 +151,109 @@ export async function getNowPlaying(token: string): Promise<NowPlaying | null> {
   };
 }
 
-/** Best-match album URI on Spotify for an artist + album title (or null). */
-export async function findAlbumUri(token: string, artist: string, album: string): Promise<string | null> {
-  const cleanArtist = artist.replace(/\s*\(\d+\)\s*$/, '').trim();
-  const q = encodeURIComponent(`album:${album} artist:${cleanArtist}`);
-  const res = await apiFetch(token, `/search?type=album&limit=5&q=${q}`);
-  if (!res.ok) return null;
-  const j: any = await res.json();
-  const items: any[] = j?.albums?.items ?? [];
-  if (items.length === 0) {
-    // looser retry without the field filters
-    const res2 = await apiFetch(token, `/search?type=album&limit=5&q=${encodeURIComponent(`${cleanArtist} ${album}`)}`);
-    if (!res2.ok) return null;
-    const j2: any = await res2.json();
-    return j2?.albums?.items?.[0]?.uri ?? null;
+function cleanArtist(artist: string): string {
+  return artist.replace(/\s*\(\d+\)\s*$/, '').trim();
+}
+
+export interface SpotifyAlbum {
+  id: string;
+  uri: string;
+}
+
+/** Best-match album on Spotify for an artist + album title (or null). */
+export async function findAlbum(token: string, artist: string, album: string): Promise<SpotifyAlbum | null> {
+  const a = cleanArtist(artist);
+  const pick = (j: any): SpotifyAlbum | null => {
+    const it = j?.albums?.items?.[0];
+    return it?.id && it?.uri ? { id: it.id, uri: it.uri } : null;
+  };
+  const res = await apiFetch(
+    token,
+    `/search?type=album&limit=5&q=${encodeURIComponent(`album:${album} artist:${a}`)}`,
+  );
+  if (res.ok) {
+    const hit = pick(await res.json());
+    if (hit) return hit;
   }
-  return items[0].uri ?? null;
+  // looser retry without the field filters
+  const res2 = await apiFetch(token, `/search?type=album&limit=5&q=${encodeURIComponent(`${a} ${album}`)}`);
+  if (!res2.ok) return null;
+  return pick(await res2.json());
+}
+
+export interface SpotifyTrack {
+  name: string;
+  uri: string;
+}
+
+/** Tracks of a Spotify album (first 50 — enough for any real release). */
+export async function getAlbumTracks(token: string, albumId: string): Promise<SpotifyTrack[]> {
+  const res = await apiFetch(token, `/albums/${albumId}/tracks?limit=50`);
+  if (!res.ok) return [];
+  const j: any = await res.json();
+  return (j?.items ?? [])
+    .filter((t: any) => t?.uri && t?.name)
+    .map((t: any) => ({ name: t.name as string, uri: t.uri as string }));
+}
+
+/** Best-match single-track URI (fallback when the album isn't found). */
+export async function findTrackUri(
+  token: string,
+  artist: string,
+  title: string,
+  album?: string,
+): Promise<string | null> {
+  const a = cleanArtist(artist);
+  const q = `track:${title} artist:${a}` + (album ? ` album:${album}` : '');
+  const res = await apiFetch(token, `/search?type=track&limit=5&q=${encodeURIComponent(q)}`);
+  if (res.ok) {
+    const j: any = await res.json();
+    if (j?.tracks?.items?.[0]?.uri) return j.tracks.items[0].uri;
+  }
+  const res2 = await apiFetch(token, `/search?type=track&limit=5&q=${encodeURIComponent(`${a} ${title}`)}`);
+  if (!res2.ok) return null;
+  const j2: any = await res2.json();
+  return j2?.tracks?.items?.[0]?.uri ?? null;
+}
+
+/** Normalize a track title for matching (lowercase, no diacritics/punct). */
+function normalizeTitle(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/** URI of the album track whose title matches `title` (or null). */
+export function matchAlbumTrackUri(tracks: SpotifyTrack[], title: string): string | null {
+  const want = normalizeTitle(title);
+  if (!want) return null;
+  const exact = tracks.find((t) => normalizeTitle(t.name) === want);
+  if (exact) return exact.uri;
+  // looser: one title contains the other ("Song" vs "Song - Remastered 2011")
+  const loose = tracks.find((t) => {
+    const n = normalizeTitle(t.name);
+    return n === want || n.startsWith(want + ' ') || want.startsWith(n + ' ');
+  });
+  return loose?.uri ?? null;
 }
 
 export type PlayResult =
   | { ok: true }
   | { ok: false; reason: 'no_device' | 'premium' | 'not_found' | 'error' };
 
-/** Start playing an album context on the user's active device. */
-export async function playContext(token: string, contextUri: string): Promise<PlayResult> {
+/**
+ * Start playback on the user's active device. `body` is the Spotify play body:
+ * `{context_uri}` (album), `{context_uri, offset:{uri}}` (album from a track),
+ * or `{uris:[...]}` (a standalone track).
+ */
+export async function play(token: string, body: Record<string, unknown>): Promise<PlayResult> {
   const res = await apiFetch(token, '/me/player/play', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ context_uri: contextUri }),
+    body: JSON.stringify(body),
   });
   if (res.ok || res.status === 204) return { ok: true };
   if (res.status === 404) return { ok: false, reason: 'no_device' }; // no active device
