@@ -18,6 +18,8 @@ import StatsPage from './pages/StatsPage';
 import DuplicatesPage from './pages/DuplicatesPage';
 import ShowcasePage from './pages/ShowcasePage';
 import SpotifyCallbackPage from './pages/SpotifyCallbackPage';
+import SharePage from './pages/SharePage';
+import ShareReleasePage from './pages/ShareReleasePage';
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -33,6 +35,9 @@ export default function App() {
   if (!user) {
     return (
       <Routes>
+        {/* Public read-only share — works without a session. */}
+        <Route path="/share/:token" element={<SharePage />} />
+        <Route path="/share/:token/release/:id" element={<ShareReleasePage />} />
         <Route path="*" element={<ProfilesPage />} />
       </Routes>
     );
@@ -46,6 +51,9 @@ export default function App() {
     <Routes>
       {/* Fullscreen, outside the app chrome. */}
       <Route path="/showcase/:id" element={<ShowcasePage />} />
+      {/* Public share — also reachable while logged in (e.g. to preview). */}
+      <Route path="/share/:token" element={<SharePage />} />
+      <Route path="/share/:token/release/:id" element={<ShareReleasePage />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Navigate to="/library" replace />} />
         <Route path="/library" element={<LibraryPage />} />

@@ -11,6 +11,7 @@ import {
   requestUpdate,
   runUpdateCheck,
 } from '../../lib/update';
+import { disableShare, enableShare, getShare } from '../../lib/public-share';
 
 export async function systemRoutes(app: FastifyInstance) {
   app.addHook('preHandler', app.authenticate);
@@ -84,5 +85,23 @@ export async function systemRoutes(app: FastifyInstance) {
     // a minute (its Discogs rate limiter stays at the boot value until the
     // next worker restart — conservative, so always safe).
     return { ok: true };
+  });
+
+  // ── Public read-only share link (admin only) ─────────────────────────────
+  app.get('/share', async (req) => {
+    await requireAdmin(req.user.sub);
+    return getShare();
+  });
+
+  // Generate (or rotate) the token and enable sharing.
+  app.post('/share', async (req) => {
+    await requireAdmin(req.user.sub);
+    return enableShare();
+  });
+
+  app.delete('/share', async (req) => {
+    await requireAdmin(req.user.sub);
+    await disableShare();
+    return { enabled: false, token: null };
   });
 }

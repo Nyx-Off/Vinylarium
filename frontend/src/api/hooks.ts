@@ -192,6 +192,39 @@ export function useArtist(id?: string) {
   });
 }
 
+export function usePublicShareInfo(token?: string) {
+  return useQuery({
+    enabled: !!token,
+    queryKey: ['public-info', token],
+    queryFn: async () => (await api.get<{ name: string; total: number }>(`/public/${token}`)).data,
+    retry: false,
+  });
+}
+
+export function usePublicReleases(
+  token: string | undefined,
+  params: { q?: string; sort?: string; page?: number; pageSize?: number },
+) {
+  return useQuery({
+    enabled: !!token,
+    queryKey: ['public-releases', token, params],
+    queryFn: async () =>
+      (
+        await api.get<T.ReleaseListResponse>(`/public/${token}/releases`, {
+          params: cleanParams(params),
+        })
+      ).data,
+  });
+}
+
+export function usePublicRelease(token?: string, id?: string) {
+  return useQuery({
+    enabled: !!token && !!id,
+    queryKey: ['public-release', token, id],
+    queryFn: async () => (await api.get<T.ReleaseDetail>(`/public/${token}/releases/${id}`)).data,
+  });
+}
+
 export function useDuplicates() {
   return useQuery({
     queryKey: ['duplicates'],

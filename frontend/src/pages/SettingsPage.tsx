@@ -244,6 +244,43 @@ export default function SettingsPage() {
   const [updMsg, setUpdMsg] = useState('');
   const [updStatus, setUpdStatus] = useState<UpdateStatus | null>(null);
 
+  // Public read-only share link (admin only).
+  const [share, setShare] = useState<{ enabled: boolean; token: string | null }>({
+    enabled: false,
+    token: null,
+  });
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  useEffect(() => {
+    if (!user?.isAdmin) return;
+    api
+      .get<{ enabled: boolean; token: string | null }>('/system/share')
+      .then((r) => setShare(r.data))
+      .catch(() => undefined);
+  }, [user?.isAdmin]);
+  const shareUrl = share.token ? `${window.location.origin}/share/${share.token}` : '';
+  async function toggleShare(enable: boolean) {
+    setShareBusy(true);
+    try {
+      const r = enable
+        ? await api.post<{ enabled: boolean; token: string | null }>('/system/share')
+        : await api.delete<{ enabled: boolean; token: string | null }>('/system/share');
+      setShare(r.data);
+    } finally {
+      setShareBusy(false);
+    }
+  }
+  async function copyShare() {
+    if (!shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    } catch {
+      /* clipboard blocked — the field is selectable anyway */
+    }
+  }
+
   // Clear only Vinylarium's client-side caches, then hard-reload to pull the
   // freshest build (no service worker today, but stay future-proof).
   const [cacheBusy, setCacheBusy] = useState(false);
@@ -750,6 +787,47 @@ export default function SettingsPage() {
           )}
         </div>
       </section>
+
+      {user?.isAdmin && (
+        <section className="card space-y-3 p-6">
+          <h2 className="font-display text-xl font-bold text-ink">Partage public</h2>
+          <p className="text-sm text-mocha">
+            Génère un lien <strong>en lecture seule</strong> pour montrer votre collection sans compte
+            (les pochettes, fiches, tracklists et paroles ; pas vos notes, ni le rangement). Vous
+            pouvez le désactiver à tout moment — le lien devient alors inutilisable.
+          </p>
+          {share.enabled && share.token ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  readOnly
+                  value={shareUrl}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="input flex-1 min-w-[16rem] font-mono text-xs"
+                />
+                <button onClick={copyShare} className="btn-outline">
+                  {shareCopied ? '✓ Copié' : 'Copier'}
+                </button>
+                <a href={shareUrl} target="_blank" rel="noreferrer" className="btn-outline">
+                  Ouvrir
+                </a>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => toggleShare(true)} disabled={shareBusy} className="btn-ghost text-sm">
+                  ⟳ Régénérer le lien
+                </button>
+                <button onClick={() => toggleShare(false)} disabled={shareBusy} className="btn-ghost text-sm text-red-700">
+                  Désactiver
+                </button>
+              </div>
+            </>
+          ) : (
+            <button onClick={() => toggleShare(true)} disabled={shareBusy} className="btn-primary">
+              {shareBusy ? '…' : 'Activer le partage public'}
+            </button>
+          )}
+        </section>
+      )}
 
       <section className="card space-y-3 p-6">
         <h2 className="font-display text-xl font-bold text-ink">Cache du site</h2>
