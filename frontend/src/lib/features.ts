@@ -8,6 +8,7 @@ import { useAuth } from './auth';
 export type FeatureKey =
   | 'map'
   | 'timeline'
+  | 'stats'
   | 'storage'
   | 'viewWall'
   | 'viewCrate'
@@ -24,6 +25,7 @@ export interface FeatureDef {
 export const FEATURES: FeatureDef[] = [
   { key: 'map', label: 'Carte du monde', description: 'Le globe interactif des origines (menu « Carte »)', group: 'nav' },
   { key: 'timeline', label: 'Frise chronologique', description: 'Le parcours des années (menu « Frise »)', group: 'nav' },
+  { key: 'stats', label: 'Statistiques', description: 'Le tableau de bord chiffré de la collection (menu « Stats »)', group: 'nav' },
   { key: 'storage', label: 'Rangement', description: 'Le suivi des emplacements physiques', group: 'nav' },
   { key: 'viewWall', label: 'Vue « Mur »', description: 'La grille de pochettes', group: 'library' },
   { key: 'viewCrate', label: 'Vue « Bac »', description: 'Les bacs à vinyles 3D feuilletables', group: 'library' },

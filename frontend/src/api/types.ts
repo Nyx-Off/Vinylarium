@@ -241,10 +241,24 @@ export interface ImportJob {
 }
 
 export interface Stats {
-  totals: { releases: number; artists: number; labels: number; live: number; pendingEnrichment: number };
+  totals: {
+    releases: number;
+    artists: number;
+    labels: number;
+    live: number;
+    pendingEnrichment: number;
+    enriched: number;
+    withLyrics: number;
+    rated: number;
+    hidden: number;
+  };
   byDecade: { decade: number; count: number }[];
   topGenres: { name: string; count: number }[];
   topCountries: { name: string; count: number }[];
+  topArtists: { id: string; name: string; count: number }[];
+  topLabels: { id: string; name: string; count: number }[];
+  ratings: { rating: number; count: number }[];
+  formats: { name: string; count: number }[];
 }
 
 export interface Origin {

@@ -6,6 +6,7 @@ import { fetchWithTimeout } from '../../lib/http';
 import { geoForCountry, geoForISO } from '../../lib/countries';
 import { mediaUrl } from '../../lib/storage';
 import { spotifyConfigured } from '../../lib/spotify';
+import { isPlaceholderArtist } from '../../lib/text';
 
 type IntegrationStatus = {
   name: string;
@@ -220,38 +221,103 @@ export async function statsRoutes(app: FastifyInstance) {
   });
 
   app.get('/', async () => {
-    const [releases, artists, labels, enrichedPending, byDecade, topGenres, topCountries, live] =
-      await Promise.all([
-        prisma.release.count(),
-        prisma.artist.count(),
-        prisma.label.count(),
-        prisma.release.count({ where: { enrichmentStatus: { in: ['PENDING', 'QUEUED', 'ENRICHING'] } } }),
-        prisma.release.groupBy({
-          by: ['decade'],
-          where: { decade: { not: null } },
-          _count: { _all: true },
-          orderBy: { decade: 'asc' },
-        }),
-        prisma.genre.findMany({
-          include: { _count: { select: { releases: true } } },
-          orderBy: { releases: { _count: 'desc' } },
-          take: 10,
-        }),
-        prisma.release.groupBy({
-          by: ['country'],
-          where: { country: { not: null } },
-          _count: { _all: true },
-          orderBy: { _count: { country: 'desc' } },
-          take: 12,
-        }),
-        prisma.release.count({ where: { isLive: true } }),
-      ]);
+    const [
+      releases,
+      artists,
+      labels,
+      enrichedPending,
+      enriched,
+      withLyrics,
+      rated,
+      hidden,
+      byDecade,
+      topGenres,
+      topCountries,
+      live,
+      topArtistsRaw,
+      topLabelsRaw,
+      ratingsRaw,
+      formatsRaw,
+    ] = await Promise.all([
+      prisma.release.count(),
+      prisma.artist.count(),
+      prisma.label.count(),
+      prisma.release.count({ where: { enrichmentStatus: { in: ['PENDING', 'QUEUED', 'ENRICHING'] } } }),
+      prisma.release.count({ where: { enrichedAt: { not: null } } }),
+      prisma.release.count({ where: { lyricsFetchedAt: { not: null } } }),
+      prisma.release.count({ where: { rating: { not: null, gt: 0 } } }),
+      prisma.release.count({ where: { hidden: true } }),
+      prisma.release.groupBy({
+        by: ['decade'],
+        where: { decade: { not: null } },
+        _count: { _all: true },
+        orderBy: { decade: 'asc' },
+      }),
+      prisma.genre.findMany({
+        include: { _count: { select: { releases: true } } },
+        orderBy: { releases: { _count: 'desc' } },
+        take: 10,
+      }),
+      prisma.release.groupBy({
+        by: ['country'],
+        where: { country: { not: null } },
+        _count: { _all: true },
+        orderBy: { _count: { country: 'desc' } },
+        take: 12,
+      }),
+      prisma.release.count({ where: { isLive: true } }),
+      // Most-represented billed artists. We over-fetch and filter placeholder
+      // artists ("Various", "Unknown Artist") that would otherwise dominate.
+      prisma.artist.findMany({
+        select: { id: true, name: true, _count: { select: { releases: true } } },
+        orderBy: { releases: { _count: 'desc' } },
+        take: 24,
+      }),
+      prisma.label.findMany({
+        select: { id: true, name: true, _count: { select: { releases: true } } },
+        orderBy: { releases: { _count: 'desc' } },
+        take: 12,
+      }),
+      prisma.release.groupBy({
+        by: ['rating'],
+        where: { rating: { not: null, gt: 0 } },
+        _count: { _all: true },
+        orderBy: { rating: 'asc' },
+      }),
+      prisma.releaseFormat.groupBy({
+        by: ['name'],
+        _count: { _all: true },
+        orderBy: { _count: { name: 'desc' } },
+        take: 12,
+      }),
+    ]);
+
+    const topArtists = topArtistsRaw
+      .filter((a) => !isPlaceholderArtist(a.name) && a._count.releases > 0)
+      .slice(0, 12)
+      .map((a) => ({ id: a.id, name: a.name, count: a._count.releases }));
 
     return {
-      totals: { releases, artists, labels, live, pendingEnrichment: enrichedPending },
+      totals: {
+        releases,
+        artists,
+        labels,
+        live,
+        pendingEnrichment: enrichedPending,
+        enriched,
+        withLyrics,
+        rated,
+        hidden,
+      },
       byDecade: byDecade.map((d) => ({ decade: d.decade, count: d._count._all })),
       topGenres: topGenres.map((g) => ({ name: g.name, count: g._count.releases })),
       topCountries: topCountries.map((c) => ({ name: c.country, count: c._count._all })),
+      topArtists,
+      topLabels: topLabelsRaw
+        .filter((l) => l._count.releases > 0)
+        .map((l) => ({ id: l.id, name: l.name, count: l._count.releases })),
+      ratings: ratingsRaw.map((r) => ({ rating: r.rating!, count: r._count._all })),
+      formats: formatsRaw.map((f) => ({ name: f.name, count: f._count._all })),
     };
   });
 }

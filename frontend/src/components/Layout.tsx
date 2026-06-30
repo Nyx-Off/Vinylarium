@@ -17,6 +17,7 @@ const NAV: NavItem[] = [
   { to: '/storage', label: 'Rangement', feature: 'storage' },
   { to: '/map', label: 'Carte', feature: 'map' },
   { to: '/timeline', label: 'Frise', feature: 'timeline' },
+  { to: '/stats', label: 'Stats', feature: 'stats' },
 ];
 
 // Mobile bottom bar: the four everyday destinations as tabs, the rest behind
@@ -30,6 +31,7 @@ const TABS: NavItem[] = [
 ];
 const MORE: NavItem[] = [
   { to: '/storage', label: 'Rangement', icon: '📦', feature: 'storage' },
+  { to: '/stats', label: 'Statistiques', icon: '📊', feature: 'stats' },
   { to: '/settings', label: 'Paramètres', icon: '⚙️' },
 ];
 
