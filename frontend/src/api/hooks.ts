@@ -16,6 +16,7 @@ export interface ReleaseFilters {
   storageLocationId?: string;
   year?: number;
   decade?: number;
+  minRating?: number; // 1..5 — at least this many stars
   live?: boolean;
   studio?: boolean;
   compilation?: boolean;

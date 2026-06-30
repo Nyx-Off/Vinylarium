@@ -26,6 +26,8 @@ export const releaseQuerySchema = z.object({
   storageLocationId: z.string().optional(),
   year: z.coerce.number().int().optional(),
   decade: z.coerce.number().int().optional(),
+  // Minimum rating (1..5): releases rated at least this many stars.
+  minRating: z.coerce.number().int().min(1).max(5).optional(),
   live: boolish,
   studio: boolish,
   compilation: boolish,
@@ -95,6 +97,7 @@ export function buildReleaseWhere(qp: ReleaseQuery): Prisma.ReleaseWhereInput {
 
   if (qp.year !== undefined) and.push({ year: qp.year });
   if (qp.decade !== undefined) and.push({ decade: qp.decade });
+  if (qp.minRating !== undefined) and.push({ rating: { gte: qp.minRating } });
   if (qp.country) and.push({ country: { equals: qp.country, mode: 'insensitive' } });
   if (qp.origin)
     and.push({ artists: { some: { artist: { originCountry: { code: qp.origin } } } } });

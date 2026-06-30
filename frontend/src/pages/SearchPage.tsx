@@ -67,6 +67,8 @@ export default function SearchPage() {
     }
     const decade = params.get('decade');
     if (decade) f.decade = Number(decade);
+    const minRating = params.get('minRating');
+    if (minRating) f.minRating = Number(minRating);
     for (const k of FLAG_KEYS) {
       if (params.get(k)) f[k] = true;
     }
@@ -177,6 +179,24 @@ export default function SearchPage() {
         </div>
 
         <div>
+          <label className="label">Note minimale</label>
+          <div className="flex flex-wrap gap-1.5">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                onClick={() =>
+                  set('minRating', filters.minRating === star ? undefined : String(star))
+                }
+                className={`chip ${filters.minRating === star ? 'chip-active' : ''}`}
+                title={`Au moins ${star} étoile${star > 1 ? 's' : ''}`}
+              >
+                {'★'.repeat(star)}+
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <label className="label">Données manquantes</label>
           <div className="flex flex-wrap gap-1.5">
             {MISSING_FILTERS.map((m) => {
@@ -240,6 +260,7 @@ export default function SearchPage() {
               <option value="artistDesc">Artiste Z→A</option>
               <option value="yearAsc">Année ↑</option>
               <option value="yearDesc">Année ↓</option>
+              <option value="ratingDesc">Note ↓</option>
             </select>
           </div>
         </div>
