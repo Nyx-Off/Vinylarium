@@ -21,6 +21,62 @@ import {
 } from '../lib/features';
 import { Integration, ImportJob, UpdateStatus } from '../api/types';
 import { NowPlayingCard } from '../components/NowPlaying';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+
+// Accent/case-insensitive haystack match for the settings search box.
+function norm(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+}
+
+/** A settings card that hides itself when it doesn't match the search query. */
+function SettingsSection({
+  id,
+  title,
+  icon,
+  keywords,
+  query,
+  danger = false,
+  children,
+}: {
+  id: string;
+  title: string;
+  icon?: string;
+  keywords?: string;
+  query: string;
+  danger?: boolean;
+  children: React.ReactNode;
+}) {
+  if (query) {
+    const hay = norm(`${title} ${keywords ?? ''}`);
+    if (!hay.includes(norm(query))) return null;
+  }
+  return (
+    <section id={id} className={`card scroll-mt-32 space-y-3 p-6 ${danger ? 'border-red-300' : ''}`}>
+      <h2
+        className={`flex items-center gap-2 font-display text-xl font-bold ${danger ? 'text-red-700' : 'text-ink'}`}
+      >
+        {icon && <span aria-hidden>{icon}</span>}
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+/** Small category label between groups of settings cards. */
+function CatHeader({ id, children }: { id: string; children: React.ReactNode }) {
+  return (
+    <h2
+      id={`cat-${id}`}
+      className="scroll-mt-32 px-1 pb-1 pt-3 font-display text-sm font-bold uppercase tracking-wide text-mocha/70"
+    >
+      {children}
+    </h2>
+  );
+}
 
 export default function SettingsPage() {
   const { user, refresh } = useAuth();
@@ -200,10 +256,7 @@ export default function SettingsPage() {
   // Discogs collection sync (API, no CSV): launch then poll the ImportJob.
   const [syncJobId, setSyncJobId] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState('');
-  const { data: syncJob } = useImportJob(
-    syncJobId ?? undefined,
-    !!syncJobId,
-  );
+  const { data: syncJob } = useImportJob(syncJobId ?? undefined, !!syncJobId);
   const syncRunning = !!syncJobId && syncJob?.status !== 'COMPLETED' && syncJob?.status !== 'FAILED';
 
   // New discs land in the library as the sync goes — refresh it at the end.
@@ -290,8 +343,34 @@ export default function SettingsPage() {
     }
   }
 
+  // Settings search box.
+  const [search, setSearch] = useState('');
+
+  // Reset the whole Vinylarium collection (admin, destructive, keeps furniture).
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetMsg, setResetMsg] = useState('');
+  async function resetCollection() {
+    setResetBusy(true);
+    setResetMsg('');
+    try {
+      const { data } = await api.post<{ deletedReleases: number }>('/system/reset-collection', {
+        confirm: 'RESET',
+      });
+      qc.invalidateQueries();
+      setResetOpen(false);
+      setResetMsg(
+        `Collection réinitialisée — ${data.deletedReleases} disque(s) supprimé(s). Vos meubles de rangement sont conservés.`,
+      );
+    } catch (e) {
+      setResetMsg(errorMessage(e));
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
   // Clear only Vinylarium's client-side caches, then hard-reload to pull the
-  // freshest build (no service worker today, but stay future-proof).
+  // freshest build.
   const [cacheBusy, setCacheBusy] = useState(false);
   async function clearSiteCache() {
     setCacheBusy(true);
@@ -352,7 +431,11 @@ export default function SettingsPage() {
   }
 
   async function launchUpdate() {
-    if (!window.confirm('Mettre à jour Vinylarium maintenant ? L’application redémarrera (moins d’une minute d’interruption).'))
+    if (
+      !window.confirm(
+        'Mettre à jour Vinylarium maintenant ? L’application redémarrera (moins d’une minute d’interruption).',
+      )
+    )
       return;
     setUpdBusy('updating');
     setUpdMsg('');
@@ -425,12 +508,60 @@ export default function SettingsPage() {
     }
   }
 
-  return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <h1 className="font-display text-3xl font-bold">Paramètres</h1>
+  const CATS: [string, string][] = [
+    ['compte', 'Compte'],
+    ['affichage', 'Affichage'],
+    ['collection', 'Collection'],
+    ['connexions', 'Connexions & API'],
+    ['systeme', 'Système'],
+    ...(user?.isAdmin ? ([['danger', 'Zone de danger']] as [string, string][]) : []),
+  ];
 
-      <section className="card space-y-3 p-6">
-        <h2 className="font-display text-xl font-bold">Profil</h2>
+  return (
+    <div className="mx-auto max-w-3xl space-y-5">
+      {/* Sticky header: title + live search + category quick-jump */}
+      <div className="sticky top-16 z-20 -mx-4 border-b border-ink/10 bg-cream/90 px-4 py-3 backdrop-blur md:top-0">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="font-display text-3xl font-bold">Paramètres</h1>
+          <div className="relative w-full sm:w-72">
+            <input
+              className="input pr-8"
+              placeholder="Rechercher un réglage…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-mocha hover:text-ink"
+                title="Effacer"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+        {!search && (
+          <div className="no-scrollbar mt-3 flex gap-1.5 overflow-x-auto">
+            {CATS.map(([id, label]) => (
+              <a key={id} href={`#cat-${id}`} className="chip shrink-0 hover:bg-ink/10">
+                {label}
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Compte ── */}
+      {!search && <CatHeader id="compte">Compte</CatHeader>}
+
+      <SettingsSection
+        id="sec-profil"
+        title="Profil"
+        icon="👤"
+        query={search}
+        keywords="profil nom mot de passe avatar photo discogs identifiant jeton compte"
+      >
         <div>
           <label className="label">Nom affiché</label>
           <input className="input" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
@@ -473,16 +604,22 @@ export default function SettingsPage() {
         <button onClick={saveProfile} disabled={busy} className="btn-primary">
           {busy ? '…' : 'Enregistrer'}
         </button>
-      </section>
+      </SettingsSection>
 
-      <section className="card space-y-4 p-6">
-        <div>
-          <h2 className="font-display text-xl font-bold">Affichage</h2>
-          <p className="text-sm text-mocha">
-            Activez ou masquez des fonctionnalités. Les changements s'appliquent
-            aussitôt, pour ce profil.
-          </p>
-        </div>
+      {/* ── Affichage ── */}
+      {!search && <CatHeader id="affichage">Affichage</CatHeader>}
+
+      <SettingsSection
+        id="sec-affichage"
+        title="Affichage"
+        icon="🎨"
+        query={search}
+        keywords="affichage langue francais anglais english fonctionnalités vues carte frise stats rangement mur bac pile hasard thème interface"
+      >
+        <p className="text-sm text-mocha">
+          Activez ou masquez des fonctionnalités. Les changements s'appliquent aussitôt, pour ce
+          profil.
+        </p>
         <div className="space-y-1">
           <h3 className="label">{t('settings.language')}</h3>
           <select
@@ -532,11 +669,19 @@ export default function SettingsPage() {
           </div>
         ))}
         {featuresMsg && <p className="text-sm text-accent">{featuresMsg}</p>}
-      </section>
+      </SettingsSection>
+
+      {/* ── Collection ── */}
+      {!search && <CatHeader id="collection">Ma collection</CatHeader>}
 
       {stats && (
-        <section className="card p-6">
-          <h2 className="mb-4 font-display text-xl font-bold">Statistiques de la collection</h2>
+        <SettingsSection
+          id="sec-stats"
+          title="Statistiques de la collection"
+          icon="📊"
+          query={search}
+          keywords="statistiques disques artistes labels genres live nombre"
+        >
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <Stat label="Disques" value={stats.totals.releases} />
             <Stat label="Artistes" value={stats.totals.artists} />
@@ -544,12 +689,12 @@ export default function SettingsPage() {
             <Stat label="Live" value={stats.totals.live} />
           </div>
           {stats.totals.pendingEnrichment > 0 && (
-            <p className="mt-4 text-sm text-mocha">
+            <p className="text-sm text-mocha">
               ⏳ {stats.totals.pendingEnrichment} disque(s) en cours d'enrichissement.
             </p>
           )}
           {stats.topGenres.length > 0 && (
-            <div className="mt-4">
+            <div>
               <h3 className="label">Genres dominants</h3>
               <div className="flex flex-wrap gap-1.5">
                 {stats.topGenres.map((g) => (
@@ -560,11 +705,19 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
-        </section>
+          <Link to="/stats" className="inline-block text-sm text-accent hover:underline">
+            Voir toutes les statistiques →
+          </Link>
+        </SettingsSection>
       )}
 
-      <section className="card space-y-3 p-6">
-        <h2 className="font-display text-xl font-bold text-ink">Enrichissement</h2>
+      <SettingsSection
+        id="sec-enrich"
+        title="Enrichissement"
+        icon="✨"
+        query={search}
+        keywords="enrichissement discogs paroles genius années pressage master ré-enrichir reenrichir manquants quota miniatures prix"
+      >
         <p className="text-sm text-mocha">
           Relance l'enrichissement Discogs (pochettes, crédits, verso, paroles) sur toute la
           collection. Utile après l'ajout d'un jeton ou pour récupérer les nouveautés.
@@ -589,9 +742,9 @@ export default function SettingsPage() {
         <div className="rounded-xl bg-ink/5 px-4 py-3">
           <p className="font-semibold">Compléter seulement les manquants</p>
           <p className="mb-3 text-xs text-mocha">
-            Ne traite que les disques jamais enrichis (la date du dernier passage est mémorisée).
-            Si le quota d'une API est épuisé, la file se met en pause et reprend automatiquement là
-            où elle en était.
+            Ne traite que les disques jamais enrichis (la date du dernier passage est mémorisée). Si
+            le quota d'une API est épuisé, la file se met en pause et reprend automatiquement là où
+            elle en était.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -622,10 +775,9 @@ export default function SettingsPage() {
         <div className="rounded-xl bg-ink/5 px-4 py-3">
           <p className="font-semibold">Corriger les années (origine / pressage)</p>
           <p className="mb-3 text-xs text-mocha">
-            Pour les disques enrichis avant l'ajout de la distinction année d'origine /
-            année de pressage : récupère uniquement le master (année de sortie originale)
-            sans re-télécharger les pochettes ni tout ré-enrichir. Sans effet si tout est
-            déjà à jour.
+            Pour les disques enrichis avant l'ajout de la distinction année d'origine / année de
+            pressage : récupère uniquement le master (année de sortie originale) sans re-télécharger
+            les pochettes ni tout ré-enrichir. Sans effet si tout est déjà à jour.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -638,10 +790,15 @@ export default function SettingsPage() {
           </div>
           {yearsMsg && <p className="mt-2 text-sm text-accent">{yearsMsg}</p>}
         </div>
-      </section>
+      </SettingsSection>
 
-      <section className="card space-y-3 p-6">
-        <h2 className="font-display text-xl font-bold text-ink">Ajout & sauvegarde</h2>
+      <SettingsSection
+        id="sec-ajout"
+        title="Ajout & sauvegarde"
+        icon="💾"
+        query={search}
+        keywords="ajout sauvegarde import csv collection discogs export restaurer backup synchroniser récupérer disque"
+      >
         <div className="rounded-xl bg-ink/5 px-4 py-3">
           <p className="font-semibold">Récupérer ma collection Discogs</p>
           <p className="mb-3 text-xs text-mocha">
@@ -697,8 +854,8 @@ export default function SettingsPage() {
             Exporte un fichier JSON avec vos disques et tout ce qui vous appartient (notes, tags,
             paroles et anecdotes manuelles) ainsi que tout le <strong>rangement 3D</strong> : la
             pièce, vos meubles (position, taille, verrou…) et quel disque est dans quelle case. La
-            restauration recrée les disques manquants (l'enrichissement Discogs se relance tout
-            seul) et remet vos données — sans doublon. À ne pas confondre avec l'import Discogs.
+            restauration recrée les disques manquants (l'enrichissement Discogs se relance tout seul)
+            et remet vos données — sans doublon. À ne pas confondre avec l'import Discogs.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <button onClick={exportBackup} disabled={backupBusy} className="btn-outline">
@@ -716,10 +873,142 @@ export default function SettingsPage() {
           </div>
           {backupMsg && <p className="mt-2 text-sm text-accent">{backupMsg}</p>}
         </div>
-      </section>
+      </SettingsSection>
 
-      <section className="card space-y-3 p-6">
-        <h2 className="font-display text-xl font-bold text-ink">Mise à jour de l'application</h2>
+      {/* ── Connexions & API ── */}
+      {!search && <CatHeader id="connexions">Connexions & API</CatHeader>}
+
+      <SettingsSection
+        id="sec-spotify"
+        title="Spotify"
+        icon="🎧"
+        query={search}
+        keywords="spotify connexion compte écoute lecture premium now playing musique"
+      >
+        <p className="text-sm text-mocha">
+          Connectez votre compte pour afficher « en cours d'écoute » et lancer un vinyle depuis sa
+          fiche (lecture sur un appareil Spotify actif — nécessite Spotify Premium).
+        </p>
+        {!spotify?.configured ? (
+          <p className="rounded-xl bg-ink/5 px-4 py-3 text-sm text-mocha">
+            Spotify n'est pas encore configuré sur le serveur (Client ID/Secret à renseigner par un
+            administrateur dans « État des API »).
+          </p>
+        ) : spotify.connected ? (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="chip bg-emerald-500/15 text-emerald-700">
+                ✓ Connecté{spotify.name ? ` — ${spotify.name}` : ''}
+              </span>
+              <button onClick={disconnectSpotify} className="btn-outline">
+                Déconnecter
+              </button>
+            </div>
+            <NowPlayingCard />
+          </div>
+        ) : (
+          <button onClick={connectSpotify} className="btn-primary">
+            Connecter mon compte Spotify
+          </button>
+        )}
+        {spotifyMsg && <p className="mt-2 text-sm text-accent">{spotifyMsg}</p>}
+      </SettingsSection>
+
+      <SettingsSection
+        id="sec-api"
+        title="État des API"
+        icon="🔌"
+        query={search}
+        keywords="api clés discogs genius spotify musicbrainz lrclib état intégrations jeton token serveur"
+      >
+        {integrationsLoading ? (
+          <p className="text-sm text-mocha">Vérification…</p>
+        ) : (
+          <div className="space-y-2">
+            {(integrations ?? []).map((it) => (
+              <IntegrationRow key={it.name} it={it} />
+            ))}
+          </div>
+        )}
+        {user?.isAdmin && apiKeysLoaded && (
+          <div className="mt-4 rounded-xl bg-ink/5 px-4 py-3">
+            <p className="font-semibold">Clés API du serveur (enrichissement)</p>
+            <p className="mb-3 text-xs text-mocha">
+              Utilisées par l'enrichissement pour toute la collection. Un champ vide garde la valeur
+              du fichier <code className="rounded bg-ink/10 px-1">.env</code> s'il y en a une.
+              MusicBrainz ne demande aucune clé.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="label">Jeton Discogs</label>
+                <input
+                  className="input"
+                  value={apiKeys.discogsToken}
+                  onChange={(e) => setApiKeys((k) => ({ ...k, discogsToken: e.target.value }))}
+                  placeholder={apiEnv.discogs ? 'défini dans .env — vide = le garder' : 'discogs.com/settings/developers'}
+                />
+              </div>
+              <div>
+                <label className="label">Jeton Genius (Client Access Token)</label>
+                <input
+                  className="input"
+                  value={apiKeys.geniusAccessToken}
+                  onChange={(e) => setApiKeys((k) => ({ ...k, geniusAccessToken: e.target.value }))}
+                  placeholder={apiEnv.genius ? 'défini dans .env — vide = le garder' : 'genius.com/api-clients'}
+                />
+              </div>
+              <div>
+                <label className="label">Spotify — Client ID</label>
+                <input
+                  className="input"
+                  value={apiKeys.spotifyClientId}
+                  onChange={(e) => setApiKeys((k) => ({ ...k, spotifyClientId: e.target.value }))}
+                  placeholder={apiEnv.spotify ? 'défini dans .env — vide = le garder' : 'developer.spotify.com'}
+                />
+              </div>
+              <div>
+                <label className="label">Spotify — Client Secret</label>
+                <input
+                  className="input"
+                  type="password"
+                  value={apiKeys.spotifyClientSecret}
+                  onChange={(e) => setApiKeys((k) => ({ ...k, spotifyClientSecret: e.target.value }))}
+                  placeholder={apiEnv.spotify ? 'défini dans .env — vide = le garder' : 'Client Secret de l’app Spotify'}
+                />
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-mocha">
+              Spotify : créez une app sur developer.spotify.com et ajoutez <strong>exactement</strong>{' '}
+              cette URL de redirection (page-relais qui ramène automatiquement vers cette instance,
+              même en accès local) :{' '}
+              <code className="rounded bg-ink/10 px-1 break-all">{spotify?.redirectUri ?? '…'}</code>
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button onClick={saveApiKeys} disabled={apiBusy} className="btn-primary">
+                {apiBusy ? '…' : 'Enregistrer les clés'}
+              </button>
+              {apiMsg && <span className="text-sm text-accent">{apiMsg}</span>}
+            </div>
+          </div>
+        )}
+        {!user?.isAdmin && (
+          <p className="mt-4 text-sm text-mocha">
+            Les clés API du serveur se configurent ici par un administrateur (ou dans le fichier{' '}
+            <code className="rounded bg-ink/10 px-1">.env</code>).
+          </p>
+        )}
+      </SettingsSection>
+
+      {/* ── Système ── */}
+      {!search && <CatHeader id="systeme">Système</CatHeader>}
+
+      <SettingsSection
+        id="sec-update"
+        title="Mise à jour de l'application"
+        icon="⬆️"
+        query={search}
+        keywords="mise à jour version update github commit nouveautés"
+      >
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="chip">
             Version installée : {version?.currentVersion ?? version?.check?.currentVersion ?? 'inconnue'}
@@ -776,9 +1065,7 @@ export default function SettingsPage() {
 
         {updBusy === 'updating' && (
           <div className="rounded-xl bg-ink/5 px-4 py-3">
-            <p className="text-sm font-semibold">
-              ⏳ {updStatus?.detail ?? 'Mise à jour en cours…'}
-            </p>
+            <p className="text-sm font-semibold">⏳ {updStatus?.detail ?? 'Mise à jour en cours…'}</p>
             <p className="text-xs text-mocha">
               Récupération du code, reconstruction des images puis redémarrage — la page peut
               brièvement perdre la connexion, ne la fermez pas.
@@ -788,11 +1075,7 @@ export default function SettingsPage() {
         {updMsg && <p className="text-sm text-accent">{updMsg}</p>}
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={checkUpdates}
-            disabled={updBusy !== 'idle'}
-            className="btn-outline"
-          >
+          <button onClick={checkUpdates} disabled={updBusy !== 'idle'} className="btn-outline">
             {updBusy === 'checking' ? '…' : '⟳ Vérifier maintenant'}
           </button>
           {user?.isAdmin && (
@@ -810,15 +1093,20 @@ export default function SettingsPage() {
             </button>
           )}
         </div>
-      </section>
+      </SettingsSection>
 
       {user?.isAdmin && (
-        <section className="card space-y-3 p-6">
-          <h2 className="font-display text-xl font-bold text-ink">Partage public</h2>
+        <SettingsSection
+          id="sec-share"
+          title="Partage public"
+          icon="🔗"
+          query={search}
+          keywords="partage public lien lecture seule token collection inviter"
+        >
           <p className="text-sm text-mocha">
-            Génère un lien <strong>en lecture seule</strong> pour montrer votre collection sans compte
-            (les pochettes, fiches, tracklists et paroles ; pas vos notes, ni le rangement). Vous
-            pouvez le désactiver à tout moment — le lien devient alors inutilisable.
+            Génère un lien <strong>en lecture seule</strong> pour montrer votre collection sans
+            compte (les pochettes, fiches, tracklists et paroles ; pas vos notes, ni le rangement).
+            Vous pouvez le désactiver à tout moment — le lien devient alors inutilisable.
           </p>
           {share.enabled && share.token ? (
             <>
@@ -827,7 +1115,7 @@ export default function SettingsPage() {
                   readOnly
                   value={shareUrl}
                   onFocus={(e) => e.currentTarget.select()}
-                  className="input flex-1 min-w-[16rem] font-mono text-xs"
+                  className="input min-w-[16rem] flex-1 font-mono text-xs"
                 />
                 <button onClick={copyShare} className="btn-outline">
                   {shareCopied ? '✓ Copié' : 'Copier'}
@@ -840,7 +1128,11 @@ export default function SettingsPage() {
                 <button onClick={() => toggleShare(true)} disabled={shareBusy} className="btn-ghost text-sm">
                   ⟳ Régénérer le lien
                 </button>
-                <button onClick={() => toggleShare(false)} disabled={shareBusy} className="btn-ghost text-sm text-red-700">
+                <button
+                  onClick={() => toggleShare(false)}
+                  disabled={shareBusy}
+                  className="btn-ghost text-sm text-red-700"
+                >
                   Désactiver
                 </button>
               </div>
@@ -850,131 +1142,69 @@ export default function SettingsPage() {
               {shareBusy ? '…' : 'Activer le partage public'}
             </button>
           )}
-        </section>
+        </SettingsSection>
       )}
 
-      <section className="card space-y-3 p-6">
-        <h2 className="font-display text-xl font-bold text-ink">Cache du site</h2>
+      <SettingsSection
+        id="sec-cache"
+        title="Cache du site"
+        icon="🧹"
+        query={search}
+        keywords="cache navigateur vider site figé version recharger"
+      >
         <p className="text-sm text-mocha">
-          Vide les données mises en cache par le navigateur pour Vinylarium
-          (et seulement Vinylarium), puis recharge la page — pratique si
-          l'affichage semble figé sur une ancienne version. Tu restes connecté.
+          Vide les données mises en cache par le navigateur pour Vinylarium (et seulement
+          Vinylarium), puis recharge la page — pratique si l'affichage semble figé sur une ancienne
+          version. Tu restes connecté.
         </p>
         <button onClick={clearSiteCache} disabled={cacheBusy} className="btn-outline">
           {cacheBusy ? '…' : '🧹 Vider le cache du site'}
         </button>
-      </section>
+      </SettingsSection>
 
-      <section className="card p-6">
-        <h2 className="mb-1 font-display text-xl font-bold text-ink">Spotify</h2>
-        <p className="mb-4 text-sm text-mocha">
-          Connectez votre compte pour afficher « en cours d'écoute » et lancer un vinyle depuis sa
-          fiche (lecture sur un appareil Spotify actif — nécessite Spotify Premium).
-        </p>
-        {!spotify?.configured ? (
-          <p className="rounded-xl bg-ink/5 px-4 py-3 text-sm text-mocha">
-            Spotify n'est pas encore configuré sur le serveur (Client ID/Secret à renseigner par un
-            administrateur dans « État des API »).
-          </p>
-        ) : spotify.connected ? (
-          <div className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="chip bg-emerald-500/15 text-emerald-700">
-                ✓ Connecté{spotify.name ? ` — ${spotify.name}` : ''}
-              </span>
-              <button onClick={disconnectSpotify} className="btn-outline">
-                Déconnecter
-              </button>
-            </div>
-            <NowPlayingCard />
-          </div>
-        ) : (
-          <button onClick={connectSpotify} className="btn-primary">
-            Connecter mon compte Spotify
-          </button>
-        )}
-        {spotifyMsg && <p className="mt-2 text-sm text-accent">{spotifyMsg}</p>}
-      </section>
+      {/* ── Zone de danger ── */}
+      {user?.isAdmin && (
+        <>
+          {!search && <CatHeader id="danger">Zone de danger</CatHeader>}
+          <SettingsSection
+            id="sec-reset"
+            title="Réinitialiser la collection"
+            icon="⚠️"
+            danger
+            query={search}
+            keywords="réinitialiser reset supprimer vider effacer collection disques danger remise à zéro tout supprimer"
+          >
+            <p className="text-sm text-mocha">
+              Supprime <strong>tous les disques</strong> de Vinylarium (et leurs artistes, labels,
+              genres, tags, paroles, pochettes…). <strong>Conserve</strong> vos meubles de rangement
+              3D, vos profils et la configuration. N'affecte <strong>pas</strong> votre compte
+              Discogs — vous pourrez tout réimporter ensuite. Action <strong>irréversible</strong>.
+            </p>
+            <button onClick={() => setResetOpen(true)} className="btn-danger">
+              🗑️ Réinitialiser la collection
+            </button>
+            {resetMsg && <p className="text-sm text-accent">{resetMsg}</p>}
+          </SettingsSection>
+        </>
+      )}
 
-      <section className="card p-6">
-        <h2 className="mb-4 font-display text-xl font-bold text-ink">État des API</h2>
-        {integrationsLoading ? (
-          <p className="text-sm text-mocha">Vérification…</p>
-        ) : (
-          <div className="space-y-2">
-            {(integrations ?? []).map((it) => (
-              <IntegrationRow key={it.name} it={it} />
-            ))}
-          </div>
-        )}
-        {user?.isAdmin && apiKeysLoaded && (
-          <div className="mt-4 rounded-xl bg-ink/5 px-4 py-3">
-            <p className="font-semibold">Clés API du serveur (enrichissement)</p>
-            <p className="mb-3 text-xs text-mocha">
-              Utilisées par l'enrichissement pour toute la collection. Un champ vide garde la
-              valeur du fichier <code className="rounded bg-ink/10 px-1">.env</code> s'il y en a
-              une. MusicBrainz ne demande aucune clé.
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div>
-                <label className="label">Jeton Discogs</label>
-                <input
-                  className="input"
-                  value={apiKeys.discogsToken}
-                  onChange={(e) => setApiKeys((k) => ({ ...k, discogsToken: e.target.value }))}
-                  placeholder={apiEnv.discogs ? 'défini dans .env — vide = le garder' : 'discogs.com/settings/developers'}
-                />
-              </div>
-              <div>
-                <label className="label">Jeton Genius (Client Access Token)</label>
-                <input
-                  className="input"
-                  value={apiKeys.geniusAccessToken}
-                  onChange={(e) => setApiKeys((k) => ({ ...k, geniusAccessToken: e.target.value }))}
-                  placeholder={apiEnv.genius ? 'défini dans .env — vide = le garder' : 'genius.com/api-clients'}
-                />
-              </div>
-              <div>
-                <label className="label">Spotify — Client ID</label>
-                <input
-                  className="input"
-                  value={apiKeys.spotifyClientId}
-                  onChange={(e) => setApiKeys((k) => ({ ...k, spotifyClientId: e.target.value }))}
-                  placeholder={apiEnv.spotify ? 'défini dans .env — vide = le garder' : 'developer.spotify.com'}
-                />
-              </div>
-              <div>
-                <label className="label">Spotify — Client Secret</label>
-                <input
-                  className="input"
-                  type="password"
-                  value={apiKeys.spotifyClientSecret}
-                  onChange={(e) => setApiKeys((k) => ({ ...k, spotifyClientSecret: e.target.value }))}
-                  placeholder={apiEnv.spotify ? 'défini dans .env — vide = le garder' : 'Client Secret de l’app Spotify'}
-                />
-              </div>
-            </div>
-            <p className="mt-2 text-xs text-mocha">
-              Spotify : créez une app sur developer.spotify.com et ajoutez <strong>exactement</strong>{' '}
-              cette URL de redirection (page-relais qui ramène automatiquement vers cette instance, même
-              en accès local) :{' '}
-              <code className="rounded bg-ink/10 px-1 break-all">{spotify?.redirectUri ?? '…'}</code>
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button onClick={saveApiKeys} disabled={apiBusy} className="btn-primary">
-                {apiBusy ? '…' : 'Enregistrer les clés'}
-              </button>
-              {apiMsg && <span className="text-sm text-accent">{apiMsg}</span>}
-            </div>
-          </div>
-        )}
-        {!user?.isAdmin && (
-          <p className="mt-4 text-sm text-mocha">
-            Les clés API du serveur se configurent ici par un administrateur (ou dans le fichier{' '}
-            <code className="rounded bg-ink/10 px-1">.env</code>).
-          </p>
-        )}
-      </section>
+      <ConfirmDialog
+        open={resetOpen}
+        danger
+        title="Réinitialiser la collection ?"
+        confirmWord="RESET"
+        confirmLabel="Tout supprimer"
+        busy={resetBusy}
+        onCancel={() => setResetOpen(false)}
+        onConfirm={resetCollection}
+        message={
+          <>
+            Tous les disques et leurs données dérivées seront <strong>définitivement supprimés</strong>.
+            Vos <strong>meubles de rangement</strong>, vos profils et votre compte Discogs sont
+            conservés. Cette action est <strong>irréversible</strong>.
+          </>
+        }
+      />
     </div>
   );
 }

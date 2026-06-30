@@ -12,6 +12,11 @@ import {
   runUpdateCheck,
 } from '../../lib/update';
 import { disableShare, enableShare, getShare } from '../../lib/public-share';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { config } from '../../config';
+import { SUBDIRS } from '../../lib/storage';
+import { enrichQueue, importQueue, lyricsQueue, musicbrainzQueue } from '../../lib/queue';
 
 export async function systemRoutes(app: FastifyInstance) {
   app.addHook('preHandler', app.authenticate);
@@ -103,5 +108,52 @@ export async function systemRoutes(app: FastifyInstance) {
     await requireAdmin(req.user.sub);
     await disableShare();
     return { enabled: false, token: null };
+  });
+
+  // ── Reset the Vinylarium collection (admin only, destructive) ─────────────
+  // Removes EVERY release and the collection-scoped entities (artists, labels,
+  // genres, styles, tags, band members, import history) plus the downloaded
+  // cover files. KEEPS: the 3D storage room + furniture (and its now-empty
+  // cells), users/profiles, server settings and API keys. Does NOT touch the
+  // user's Discogs account. Requires an explicit `confirm: "RESET"` body.
+  app.post('/reset-collection', async (req) => {
+    await requireAdmin(req.user.sub);
+    const body = z.object({ confirm: z.string() }).parse(req.body);
+    if (body.confirm !== 'RESET') throw conflict('Confirmation manquante');
+
+    // Drain pending jobs first so nothing re-creates rows mid-reset.
+    await Promise.all(
+      [importQueue, enrichQueue, lyricsQueue, musicbrainzQueue].map((q) =>
+        q.obliterate({ force: true }).catch(() => undefined),
+      ),
+    );
+
+    const deletedReleases = await prisma.release.count();
+    // Order matters: releases first (cascades all their children incl. credits,
+    // tracks, images, lyrics, tags links, format rows). Band members reference
+    // artists, so clear them before artists. Storage locations/furniture are
+    // left untouched (release.storageLocationId is ON DELETE SET NULL).
+    await prisma.$transaction([
+      prisma.release.deleteMany({}),
+      prisma.bandMember.deleteMany({}),
+      prisma.artist.deleteMany({}),
+      prisma.label.deleteMany({}),
+      prisma.genre.deleteMany({}),
+      prisma.style.deleteMany({}),
+      prisma.tag.deleteMany({}),
+      prisma.importJob.deleteMany({}),
+    ]);
+
+    // Best-effort: drop the downloaded cover files (all belonged to deleted
+    // releases). Avatars and the room stay.
+    try {
+      const dir = path.join(config.storageDir, SUBDIRS.covers);
+      const entries = await fs.readdir(dir).catch(() => [] as string[]);
+      await Promise.all(entries.map((f) => fs.rm(path.join(dir, f), { force: true })));
+    } catch {
+      /* ignore filesystem cleanup errors */
+    }
+
+    return { ok: true, deletedReleases };
   });
 }

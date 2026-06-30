@@ -39,6 +39,9 @@
   .btn-outline {
     @apply btn border border-ink/20 text-ink hover:bg-ink/5;
   }
+  .btn-danger {
+    @apply btn bg-red-700 text-cream hover:bg-red-800 shadow-tile;
+  }
   .card {
     @apply rounded-2xl bg-cream/80 border border-ink/10 shadow-tile;
   }
