@@ -80,11 +80,20 @@ export async function publicRoutes(app: FastifyInstance) {
     });
     if (!release) throw notFound('Disque introuvable');
     const detail = toDetail(release) as Record<string, unknown>;
-    // Strip personal data from the public sheet.
+    // Strip everything personal from the public sheet: private notes, rating,
+    // physical storage, the Discogs collection folder, the owner's tags, and any
+    // MANUALLY-written anecdotes (those can be private notes; keep the cultural
+    // GENIUS ones).
     delete detail.notes;
     delete detail.rating;
     delete detail.storage;
     delete detail.collectionFolder;
+    detail.tags = [];
+    if (Array.isArray(detail.anecdotes)) {
+      detail.anecdotes = (detail.anecdotes as { source?: string }[]).filter(
+        (a) => a.source !== 'MANUAL',
+      );
+    }
     return detail;
   });
 }
