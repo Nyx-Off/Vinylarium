@@ -3,36 +3,38 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { FeatureKey, useFeatures } from '../lib/features';
+import { useT } from '../lib/i18n';
 import { Me } from '../api/types';
 import { NowPlayingPill } from './NowPlaying';
 
+// `label` is an i18n key resolved at render (t(label)).
 type NavItem = { to: string; label: string; icon?: string; feature?: FeatureKey };
 
 // L'ajout de disques (recherche Discogs), l'import et la sauvegarde vivent
 // dans Paramètres (profil), pas dans la navigation. `feature` = masquable
 // depuis Paramètres → Affichage (les entrées sans clé sont toujours là).
 const NAV: NavItem[] = [
-  { to: '/library', label: 'Bibliothèque' },
-  { to: '/search', label: 'Recherche' },
-  { to: '/storage', label: 'Rangement', feature: 'storage' },
-  { to: '/map', label: 'Carte', feature: 'map' },
-  { to: '/timeline', label: 'Frise', feature: 'timeline' },
-  { to: '/stats', label: 'Stats', feature: 'stats' },
+  { to: '/library', label: 'nav.library' },
+  { to: '/search', label: 'nav.search' },
+  { to: '/storage', label: 'nav.storage', feature: 'storage' },
+  { to: '/map', label: 'nav.map', feature: 'map' },
+  { to: '/timeline', label: 'nav.timeline', feature: 'timeline' },
+  { to: '/stats', label: 'nav.stats', feature: 'stats' },
 ];
 
 // Mobile bottom bar: the four everyday destinations as tabs, the rest behind
 // a "Plus" sheet — the old horizontally-scrolling pill strip hid half the
 // links off-screen on a phone.
 const TABS: NavItem[] = [
-  { to: '/library', label: 'Bibliothèque', icon: '💿' },
-  { to: '/search', label: 'Recherche', icon: '🔍' },
-  { to: '/map', label: 'Carte', icon: '🌍', feature: 'map' },
-  { to: '/timeline', label: 'Frise', icon: '🕰️', feature: 'timeline' },
+  { to: '/library', label: 'nav.library', icon: '💿' },
+  { to: '/search', label: 'nav.search', icon: '🔍' },
+  { to: '/map', label: 'nav.map', icon: '🌍', feature: 'map' },
+  { to: '/timeline', label: 'nav.timeline', icon: '🕰️', feature: 'timeline' },
 ];
 const MORE: NavItem[] = [
-  { to: '/storage', label: 'Rangement', icon: '📦', feature: 'storage' },
-  { to: '/stats', label: 'Statistiques', icon: '📊', feature: 'stats' },
-  { to: '/settings', label: 'Paramètres', icon: '⚙️' },
+  { to: '/storage', label: 'nav.storage', icon: '📦', feature: 'storage' },
+  { to: '/stats', label: 'nav.stats', icon: '📊', feature: 'stats' },
+  { to: '/settings', label: 'nav.settings', icon: '⚙️' },
 ];
 
 export function Disc({ className = 'h-7 w-7' }: { className?: string }) {
@@ -61,6 +63,7 @@ function Avatar({ user }: { user: Me | null }) {
 export function Layout() {
   const { user, logout } = useAuth();
   const features = useFeatures();
+  const tr = useT();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -96,7 +99,7 @@ export function Layout() {
                   )
                 }
               >
-                {n.label}
+                {tr(n.label)}
               </NavLink>
             ))}
           </nav>
@@ -115,7 +118,7 @@ export function Layout() {
                 navigate('/');
               }}
               className="btn-ghost px-3"
-              title="Changer de profil"
+              title={tr('nav.changeProfile')}
             >
               ⎋
             </button>
@@ -127,7 +130,7 @@ export function Layout() {
         <Outlet />
       </main>
       <footer className="mx-auto max-w-7xl px-4 py-8 pb-24 text-center text-xs text-mocha/60 md:pb-8">
-        Vinylarium · une idée de Julien Campinotti, portée par Samy Bensalem
+        {tr('footer.tagline')}
       </footer>
 
       {/* Mobile bottom tab bar */}
@@ -152,7 +155,7 @@ export function Layout() {
                   }
                 >
                   <span className="text-base leading-none">{m.icon}</span>
-                  {m.label}
+                  {tr(m.label)}
                 </NavLink>
               ))}
               <button
@@ -163,7 +166,7 @@ export function Layout() {
                 className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-mocha"
               >
                 <span className="text-base leading-none">⎋</span>
-                Changer de profil
+                {tr('nav.changeProfile')}
               </button>
             </div>
           </>
@@ -184,7 +187,7 @@ export function Layout() {
               }
             >
               <span className="text-lg leading-none">{t.icon}</span>
-              {t.label}
+              {tr(t.label)}
             </NavLink>
           ))}
           <button
@@ -195,7 +198,7 @@ export function Layout() {
             )}
           >
             <span className="text-lg leading-none">⋯</span>
-            Plus
+            {tr('nav.more')}
           </button>
         </div>
       </nav>

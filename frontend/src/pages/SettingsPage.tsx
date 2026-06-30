@@ -11,6 +11,7 @@ import {
   useSpotifyStatus,
 } from '../api/hooks';
 import { useAuth } from '../lib/auth';
+import { LANGS, resolveLang, useT } from '../lib/i18n';
 import {
   FEATURES,
   FeatureFlags,
@@ -23,6 +24,14 @@ import { NowPlayingCard } from '../components/NowPlaying';
 
 export default function SettingsPage() {
   const { user, refresh } = useAuth();
+  const t = useT();
+  async function changeLang(lang: string) {
+    if (!user) return;
+    await api.patch(`/users/${user.id}`, {
+      preferences: { ...(user.preferences ?? {}), lang },
+    });
+    await refresh();
+  }
   const { data: stats } = useStats();
   const { data: integrations, isLoading: integrationsLoading } = useIntegrations();
   const { data: reenrich } = useReenrichStatus();
@@ -473,6 +482,21 @@ export default function SettingsPage() {
             Activez ou masquez des fonctionnalités. Les changements s'appliquent
             aussitôt, pour ce profil.
           </p>
+        </div>
+        <div className="space-y-1">
+          <h3 className="label">{t('settings.language')}</h3>
+          <select
+            className="input w-48"
+            value={resolveLang(user?.preferences)}
+            onChange={(e) => changeLang(e.target.value)}
+          >
+            {LANGS.map((l) => (
+              <option key={l.value} value={l.value}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-mocha">{t('settings.languageHint')}</p>
         </div>
         {(['nav', 'library'] as const).map((group) => (
           <div key={group} className="space-y-2">
