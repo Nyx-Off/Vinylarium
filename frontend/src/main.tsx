@@ -23,3 +23,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </QueryClientProvider>
   </React.StrictMode>,
 );
+
+// PWA: register the (media-only) service worker in production. Dev keeps no SW
+// so Vite HMR is never intercepted.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* SW is an enhancement; ignore registration failures */
+    });
+  });
+}

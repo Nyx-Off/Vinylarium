@@ -54,6 +54,7 @@ profils utilisateurs.
 - **Sauvegarde de la collection (export / restauration)** — depuis les paramètres : export d'un fichier JSON contenant les disques et tout ce qui vous appartient (notes, étoiles, tags, paroles et anecdotes manuelles) **ainsi que tout le rangement 3D** : la pièce, vos meubles (position, taille, verrou…) et **quel disque est dans quelle case** (et dans quel ordre) ; la restauration recrée les disques manquants (l'enrichissement Discogs se relance automatiquement), **recrée vos meubles** (sans doublon, appariés par nom + type) et remet vos données. Distinct de l'import Discogs.
 - **Sauvegarde / restauration serveur** — scripts fournis pour la base et les médias.
 - **Mise à jour intégrée** — depuis les paramètres : **numéro de version** (fichier `VERSION` du dépôt) comparé à celui publié sur GitHub pour savoir d'un coup d'œil si vous êtes à jour, **vérification quotidienne automatique** (+ bouton « Vérifier maintenant », liste des commits en retard), et bouton **« Mettre à jour »** (admin) qui fait `git pull` + rebuild + redémarrage via un conteneur *updater* dédié, avec progression en direct.
+- **Application installable (PWA)** — Vinylarium s'installe sur l'écran d'accueil (mobile) ou comme application de bureau, avec son icône et un affichage plein écran ; les pochettes déjà vues sont mises en cache pour un affichage instantané. Le service worker reste volontairement minimal (il ne met en cache **que** les images) pour ne jamais figer une ancienne version de l'interface.
 - **Vider le cache du site** — un bouton dans les paramètres vide les caches navigateur de Vinylarium (et seulement de Vinylarium) puis recharge, sans vous déconnecter — utile si l'affichage semble figé sur une ancienne version.
 
 ## 🏗️ Architecture
@@ -242,6 +243,7 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 - [x] **Paroles synchronisées avec Spotify** : LRC horodaté de LRCLIB conservé, défilement en surbrillance calé sur le « en cours d'écoute »
 - [x] **Valeur de la collection & cote Discogs** : prix le plus bas du marché + cote communautaire (possédé/recherché) capturés à l'enrichissement (zéro appel en plus), valeur totale estimée et plus cotés dans les statistiques
 - [x] **Miniatures de pochettes** : vignettes ~400px générées (sharp) pour le mur / les bacs / les piles / la recherche, avec rattrapage automatique des disques déjà enrichis — les grilles ne chargent plus les pochettes pleine résolution
+- [x] **PWA installable** : manifeste + icône + service worker minimal (cache des pochettes uniquement) — installable sur mobile/desktop sans figer l'app
 - [x] **Opérations en masse** : sélection multiple dans la vue Mur pour masquer/afficher ou ajouter/retirer un tag en lot
 - [x] **Détection de doublons** : regroupement par master Discogs / artiste + titre, avec masquage en un clic
 - [x] **Recherche plein texte dans les paroles** (onglet « Paroles » de la recherche, extrait surligné, index PostgreSQL)
