@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, errorMessage } from '../api/client';
 import { useNowPlaying, useRelease, useSpotifyStatus, useStorageLocations } from '../api/hooks';
-import { Credit, ReleaseDetail } from '../api/types';
+import { Credit } from '../api/types';
 import { Cover } from '../components/Cover';
 import { Lightbox } from '../components/Lightbox';
 import { Rating } from '../components/Rating';

@@ -219,9 +219,11 @@ Les données persistent dans les volumes Docker `vinylarium_pgdata`, `vinylarium
 cd backend && npm install && npx prisma migrate dev
 npm run dev          # API sur :3000
 npm run dev:worker   # worker
+npm test             # tests unitaires (Vitest) ; npm run lint pour ESLint
 
 # Frontend — proxy /api vers :3000
 cd frontend && npm install && npm run dev   # Vite sur :5173
+npm run typecheck && npm test && npm run lint
 ```
 
 ## 🗺️ Feuille de route

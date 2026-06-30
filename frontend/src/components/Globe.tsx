@@ -160,8 +160,10 @@ export function Globe({ origins, onSelect }: Props) {
         for (let lat = -90; lat <= 90; lat += 4) {
           const v = rotated(lat, lng);
           if (v.z >= 0) {
-            if (!started) (ctx.moveTo(sx(v), sy(v)), (started = true));
-            else ctx.lineTo(sx(v), sy(v));
+            if (!started) {
+              ctx.moveTo(sx(v), sy(v));
+              started = true;
+            } else ctx.lineTo(sx(v), sy(v));
           } else started = false;
         }
         ctx.stroke();
