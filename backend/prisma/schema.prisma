@@ -178,6 +178,7 @@ model Release {
 
   // Cover art (denormalised convenience paths; full set lives in Image[])
   coverPath     String? // local path under STORAGE_DIR to the primary front cover
+  coverThumbPath String? // downsized (~400px) front cover for the library grids/bins
   backCoverPath String?
   thumbUrl      String? // remote Discogs thumbnail (fallback before download)
 

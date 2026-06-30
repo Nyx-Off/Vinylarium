@@ -1,5 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
+import sharp from 'sharp';
 import { config } from '../config';
 import { fetchWithTimeout } from './http';
 
@@ -37,6 +38,29 @@ export async function saveBuffer(
   await fs.mkdir(path.dirname(absPath(rel)), { recursive: true });
   await fs.writeFile(absPath(rel), data);
   return rel;
+}
+
+/**
+ * Generate a downsized JPEG thumbnail from a stored image. `srcRel` is a path
+ * relative to STORAGE_DIR; the thumb is written next to it as
+ * "<name>-thumb.jpg". Returns the thumb's relative path, or null on any failure
+ * (a missing thumb just means the grids fall back to the full cover).
+ */
+export async function makeThumbnail(srcRel: string, size = 400): Promise<string | null> {
+  try {
+    const dir = path.posix.dirname(srcRel);
+    const base = path.posix.basename(srcRel).replace(/\.[^.]+$/, '');
+    const destRel = path.posix.join(dir, `${base}-thumb.jpg`);
+    const buf = await sharp(absPath(srcRel))
+      .rotate()
+      .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 72, mozjpeg: true })
+      .toBuffer();
+    await fs.writeFile(absPath(destRel), buf);
+    return destRel;
+  } catch {
+    return null;
+  }
 }
 
 /** Download a remote file into storage. Returns the relative path or null on failure. */

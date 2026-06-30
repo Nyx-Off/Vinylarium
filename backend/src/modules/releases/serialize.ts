@@ -27,6 +27,11 @@ export function coverUrlOf(r: any): string | null {
   return mediaUrl(r.coverPath) ?? r.thumbUrl ?? null;
 }
 
+/** Grid/bin cover: prefer the downsized thumbnail, fall back to the full cover. */
+export function coverThumbUrlOf(r: any): string | null {
+  return mediaUrl(r.coverThumbPath) ?? mediaUrl(r.coverPath) ?? r.thumbUrl ?? null;
+}
+
 /** Lightweight DTO for grids / walls / carousels. */
 export function toListItem(r: any) {
   return {
@@ -39,7 +44,7 @@ export function toListItem(r: any) {
     catalogNumber: r.catalogNumber,
     rating: r.rating,
     hidden: r.hidden,
-    coverUrl: coverUrlOf(r),
+    coverUrl: coverThumbUrlOf(r),
     enrichmentStatus: r.enrichmentStatus,
     isLive: r.isLive,
     isStudio: r.isStudio,

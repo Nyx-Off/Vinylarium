@@ -4,7 +4,7 @@ import path from 'path';
 import { prisma } from '../../db/prisma';
 import { badRequest, notFound } from '../../lib/errors';
 import { currentUser } from '../../lib/auth-helpers';
-import { saveBuffer, mediaUrl } from '../../lib/storage';
+import { saveBuffer, mediaUrl, makeThumbnail } from '../../lib/storage';
 import { deriveDecade, deriveVersionFlags, sortName } from '../../lib/text';
 import {
   upsertArtistByName,
@@ -602,7 +602,10 @@ export async function releaseRoutes(app: FastifyInstance) {
     const rel = await saveBuffer('covers', `manual-${id}-${which}${ext}`, buf);
     await prisma.release.update({
       where: { id },
-      data: which === 'back' ? { backCoverPath: rel } : { coverPath: rel },
+      data:
+        which === 'back'
+          ? { backCoverPath: rel }
+          : { coverPath: rel, coverThumbPath: await makeThumbnail(rel) },
     });
     return { ok: true };
   });

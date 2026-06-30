@@ -13,7 +13,7 @@ import {
   artistOriginJobId,
   artistRelationsJobId,
 } from './lib/queue';
-import { ensureStorageDirs } from './lib/storage';
+import { ensureStorageDirs, makeThumbnail } from './lib/storage';
 import { applyApiKeyOverrides } from './lib/api-keys';
 import { seedRoles } from './lib/seed';
 import { prisma } from './db/prisma';
@@ -86,6 +86,37 @@ async function backfillMusicBrainz() {
   );
 }
 
+/**
+ * Generate missing front-cover thumbnails for already-downloaded covers. Pure
+ * local CPU (no network / no rate limit), so it runs in the background after
+ * boot without blocking the queues. New enrichments make their own thumb; this
+ * backfills the library that existed before thumbnails were introduced.
+ */
+async function backfillThumbnails() {
+  const BATCH = 50;
+  let done = 0;
+  for (;;) {
+    const batch = await prisma.release.findMany({
+      where: { coverPath: { not: null }, coverThumbPath: null },
+      select: { id: true, coverPath: true },
+      take: BATCH,
+    });
+    if (batch.length === 0) break;
+    for (const r of batch) {
+      const thumb = await makeThumbnail(r.coverPath!);
+      // Store the thumb when made; otherwise point at the full cover so this
+      // release isn't reconsidered every boot (a missing source file, etc.).
+      await prisma.release.update({
+        where: { id: r.id },
+        data: { coverThumbPath: thumb ?? r.coverPath },
+      });
+      done++;
+    }
+    if (batch.length < BATCH) break;
+  }
+  if (done > 0) console.log(`Generated ${done} cover thumbnail(s).`);
+}
+
 async function main() {
   await ensureStorageDirs();
   await seedRoles();
@@ -95,6 +126,8 @@ async function main() {
   setInterval(() => applyApiKeyOverrides().catch(() => undefined), 60_000);
   await recoverStuckEnrichments();
   await backfillMusicBrainz();
+  // Fire-and-forget: don't hold up the queues while it grinds through covers.
+  backfillThumbnails().catch((e) => console.warn('[thumbnails] backfill failed', e));
 
   // Job name picks the source: 'discogs-sync' pulls the user's collection
   // through the Discogs API (profile credentials), anything else parses a CSV.

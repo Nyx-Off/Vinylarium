@@ -1,6 +1,6 @@
 import { ImageType } from '@prisma/client';
 import { prisma } from '../../db/prisma';
-import { downloadToStorage } from '../../lib/storage';
+import { downloadToStorage, makeThumbnail } from '../../lib/storage';
 import { imageHeaders } from '../clients/discogs';
 import { parseRole, splitRoles } from '../../lib/discogs-roles';
 import {
@@ -347,12 +347,15 @@ async function applyImages(releaseId: string, data: any): Promise<void> {
     );
   }
 
+  // Downsized front cover for the library grids/bins (best-effort).
+  const coverThumbPath = coverPath ? await makeThumbnail(coverPath) : null;
+
   // Only overwrite what we managed to download — keeps manual uploads when
   // Discogs has nothing better.
   await prisma.release.update({
     where: { id: releaseId },
     data: {
-      ...(coverPath ? { coverPath } : {}),
+      ...(coverPath ? { coverPath, coverThumbPath } : {}),
       ...(backPath ? { backCoverPath: backPath } : {}),
     },
   });

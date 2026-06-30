@@ -235,6 +235,7 @@ cd frontend && npm install && npm run dev   # Vite sur :5173
 - [x] **Paroles plus complètes** : replis quand la recherche Genius échoue (URL canonique + variantes d'orthographe, puis catalogue de l'artiste) et **2ᵉ source LRCLIB** (gratuite, sans clé, complémentaire) — ajoutée à l'« État des API »
 - [x] **Paroles fiables sur les compilations / B.O.** : artiste par piste (au lieu du « Various » du disque), meilleur résultat retenu (pas le premier), formulations de recherche multiples, confirmation par l'album et filtrage des artistes fictifs
 - [x] **Frise chronologique** en parcours de point en point (pochettes virevoltant autour de chaque année, navigation par décennie)
+- [x] **Miniatures de pochettes** : vignettes ~400px générées (sharp) pour le mur / les bacs / les piles / la recherche, avec rattrapage automatique des disques déjà enrichis — les grilles ne chargent plus les pochettes pleine résolution
 - [x] **Détection de doublons** : regroupement par master Discogs / artiste + titre, avec masquage en un clic
 - [x] **Recherche plein texte dans les paroles** (onglet « Paroles » de la recherche, extrait surligné, index PostgreSQL)
 - [x] **Page Statistiques** : tableau de bord chiffré (totaux, part enrichie/avec paroles/notés, classements par décennie / genres / artistes / labels / pays / formats / notes), chaque barre cliquable vers la recherche filtrée
