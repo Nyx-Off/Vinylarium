@@ -46,7 +46,13 @@ export async function processLyrics(releaseId: string): Promise<void> {
 
   // Collect everything first, then replace in one transaction: the old rows
   // must never be deleted on the strength of a fetch that produced nothing.
-  const found: { trackId: string; text: string; url: string; source: 'GENIUS' | 'LRCLIB' }[] = [];
+  const found: {
+    trackId: string;
+    text: string;
+    url: string;
+    source: 'GENIUS' | 'LRCLIB';
+    synced?: string | null;
+  }[] = [];
   for (const track of tracks) {
     try {
       // Compilations bill the release as "Various"; the per-track artist (when
@@ -69,7 +75,14 @@ export async function processLyrics(releaseId: string): Promise<void> {
             durationSec: track.durationSec,
           })
           .catch(() => null);
-        if (lrc) found.push({ trackId: track.id, text: lrc.text, url: lrc.url, source: 'LRCLIB' });
+        if (lrc)
+          found.push({
+            trackId: track.id,
+            text: lrc.text,
+            url: lrc.url,
+            source: 'LRCLIB',
+            synced: lrc.synced,
+          });
       }
     } catch (e) {
       if (e instanceof GeniusRateLimitError) throw e;
@@ -88,6 +101,7 @@ export async function processLyrics(releaseId: string): Promise<void> {
           releaseId,
           trackId: f.trackId,
           text: f.text,
+          synced: f.synced ?? null,
           source: f.source,
           sourceUrl: f.url,
         },

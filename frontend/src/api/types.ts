@@ -138,7 +138,7 @@ export interface ReleaseDetail {
   formats: { name: string; qty: string | null; text: string | null; descriptions: string[] }[];
   tracklist: Track[];
   images: { id: string; type: string; url: string | null; width: number | null; height: number | null }[];
-  lyrics: { id: string; trackId: string | null; text: string; source: string; sourceUrl: string | null }[];
+  lyrics: { id: string; trackId: string | null; text: string; synced: string | null; source: string; sourceUrl: string | null }[];
   anecdotes: { id: string; title: string | null; body: string; source: string; sourceUrl: string | null }[];
   identifiers: { type: string; value: string; description: string | null }[];
   externalLinks: { source: string; url: string }[];

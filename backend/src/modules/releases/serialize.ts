@@ -196,6 +196,7 @@ export function toDetail(r: any) {
       id: l.id,
       trackId: l.trackId,
       text: l.text,
+      synced: l.synced ?? null,
       source: l.source,
       sourceUrl: l.sourceUrl,
     })),

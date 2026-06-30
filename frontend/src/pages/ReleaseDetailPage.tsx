@@ -2,12 +2,30 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, errorMessage } from '../api/client';
-import { useRelease, useSpotifyStatus, useStorageLocations } from '../api/hooks';
+import { useNowPlaying, useRelease, useSpotifyStatus, useStorageLocations } from '../api/hooks';
 import { Credit, ReleaseDetail } from '../api/types';
 import { Cover } from '../components/Cover';
 import { Lightbox } from '../components/Lightbox';
 import { Rating } from '../components/Rating';
 import { Spinner } from '../components/Spinner';
+import { SyncedLyrics } from '../components/SyncedLyrics';
+
+// Loose title match (accent/case/punctuation-insensitive) so the now-playing
+// track lines up with a lyrics entry's track title.
+function looseTitleEq(a?: string | null, b?: string | null): boolean {
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/\([^)]*\)/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  if (!a || !b) return false;
+  const na = norm(a);
+  const nb = norm(b);
+  return na === nb || (na.length >= 4 && (na.includes(nb) || nb.includes(na)));
+}
 
 function CreditGroup({ title, credits }: { title: string; credits: Credit[] }) {
   if (!credits.length) return null;
@@ -68,6 +86,7 @@ export default function ReleaseDetailPage() {
   const { data: r, isLoading } = useRelease(id);
   const { data: locations } = useStorageLocations();
   const { data: spotify } = useSpotifyStatus();
+  const { data: nowPlaying } = useNowPlaying(Boolean(spotify?.connected));
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ storageLocationId: '', storageSlot: '', tags: '', notes: '' });
@@ -553,13 +572,36 @@ export default function ReleaseDetailPage() {
               <div className="space-y-2">
                 {r.lyrics.map((l) => {
                   const track = r.tracklist.find((t) => t.id === l.trackId);
+                  // This track is the one currently on Spotify → follow along.
+                  const isNow =
+                    Boolean(nowPlaying?.connected) &&
+                    looseTitleEq(track?.title, nowPlaying?.title);
                   return (
-                    <details key={l.id} className="rounded-lg bg-ink/5 px-4 py-2">
+                    <details
+                      key={l.id}
+                      open={isNow || undefined}
+                      className="rounded-lg bg-ink/5 px-4 py-2"
+                    >
                       <summary className="cursor-pointer text-sm font-semibold">
                         {track?.title ?? 'Paroles'}
                         {l.source === 'GENIUS' && <span className="ml-2 text-xs text-mocha">· Genius</span>}
+                        {l.synced && (
+                          <span className="ml-2 text-xs text-accent" title="Synchronisées avec la lecture">
+                            · synchro
+                          </span>
+                        )}
+                        {isNow && <span className="ml-2 text-xs text-accent">▶</span>}
                       </summary>
-                      <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-mocha">{l.text}</pre>
+                      {l.synced ? (
+                        <SyncedLyrics
+                          lrc={l.synced}
+                          active={isNow}
+                          playing={Boolean(nowPlaying?.playing)}
+                          progressMs={nowPlaying?.progressMs ?? 0}
+                        />
+                      ) : (
+                        <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-mocha">{l.text}</pre>
+                      )}
                       {l.sourceUrl && (
                         <a
                           href={l.sourceUrl}

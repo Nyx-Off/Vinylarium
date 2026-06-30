@@ -502,6 +502,7 @@ model Lyrics {
   releaseId String
   trackId   String?
   text      String     @db.Text
+  synced    String?    @db.Text // raw timestamped LRC (from LRCLIB), for playback-synced display
   source    TextSource @default(MANUAL)
   sourceUrl String?
   createdAt DateTime   @default(now())

@@ -77,7 +77,7 @@ export const lrclib = {
     title: string;
     album?: string | null;
     durationSec?: number | null;
-  }): Promise<{ text: string; url: string } | null> {
+  }): Promise<{ text: string; url: string; synced: string | null } | null> {
     const artist = opts.artist?.trim();
     const title = opts.title?.trim();
     if (!artist || !title) return null;
@@ -85,7 +85,7 @@ export const lrclib = {
     const wantBase = normalize(stripParens(title));
     const wantArtist = normalize(artist);
 
-    const pick = (recs: LrcRecord[]): { text: string; url: string } | null => {
+    const pick = (recs: LrcRecord[]): { text: string; url: string; synced: string | null } | null => {
       const valid = recs.filter((r) => artistOk(wantArtist, r) && titleOk(wantTitle, wantBase, r));
       if (valid.length === 0) return null;
       const dur = opts.durationSec ?? null;
@@ -96,7 +96,13 @@ export const lrclib = {
       });
       for (const r of valid) {
         const text = plainFrom(r);
-        if (text) return { text, url: r.id ? `https://lrclib.net/api/get/${r.id}` : 'https://lrclib.net' };
+        if (text)
+          return {
+            text,
+            // Raw timestamped LRC, kept so the UI can sync lines to playback.
+            synced: r.syncedLyrics && r.syncedLyrics.trim() ? r.syncedLyrics.trim() : null,
+            url: r.id ? `https://lrclib.net/api/get/${r.id}` : 'https://lrclib.net',
+          };
       }
       return null;
     };
