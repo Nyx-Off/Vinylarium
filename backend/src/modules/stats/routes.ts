@@ -238,6 +238,8 @@ export async function statsRoutes(app: FastifyInstance) {
       topLabelsRaw,
       ratingsRaw,
       formatsRaw,
+      valuationAgg,
+      topValuedRaw,
     ] = await Promise.all([
       prisma.release.count(),
       prisma.artist.count(),
@@ -290,6 +292,26 @@ export async function statsRoutes(app: FastifyInstance) {
         orderBy: { _count: { name: 'desc' } },
         take: 12,
       }),
+      prisma.release.aggregate({
+        where: { lowestPrice: { not: null }, hidden: false },
+        _sum: { lowestPrice: true },
+        _count: { _all: true },
+      }),
+      prisma.release.findMany({
+        where: { lowestPrice: { not: null }, hidden: false },
+        select: {
+          id: true,
+          title: true,
+          artistDisplay: true,
+          lowestPrice: true,
+          priceCurrency: true,
+          coverThumbPath: true,
+          coverPath: true,
+          thumbUrl: true,
+        },
+        orderBy: { lowestPrice: 'desc' },
+        take: 12,
+      }),
     ]);
 
     const topArtists = topArtistsRaw
@@ -318,6 +340,19 @@ export async function statsRoutes(app: FastifyInstance) {
         .map((l) => ({ id: l.id, name: l.name, count: l._count.releases })),
       ratings: ratingsRaw.map((r) => ({ rating: r.rating!, count: r._count._all })),
       formats: formatsRaw.map((f) => ({ name: f.name, count: f._count._all })),
+      valuation: {
+        total: valuationAgg._sum.lowestPrice ?? 0,
+        count: valuationAgg._count._all,
+        currency: config.discogs.currency,
+      },
+      topValued: topValuedRaw.map((r) => ({
+        id: r.id,
+        title: r.title,
+        artistDisplay: r.artistDisplay,
+        price: r.lowestPrice,
+        currency: r.priceCurrency,
+        coverUrl: mediaUrl(r.coverThumbPath) ?? mediaUrl(r.coverPath) ?? r.thumbUrl,
+      })),
     };
   });
 }

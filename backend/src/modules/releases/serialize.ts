@@ -135,6 +135,13 @@ export function toDetail(r: any) {
     mediaCondition: r.mediaCondition,
     sleeveCondition: r.sleeveCondition,
     collectionFolder: r.collectionFolder,
+    market: {
+      lowestPrice: r.lowestPrice ?? null,
+      currency: r.priceCurrency ?? null,
+      numForSale: r.numForSale ?? null,
+      have: r.communityHave ?? null,
+      want: r.communityWant ?? null,
+    },
     coverUrl: coverUrlOf(r),
     backCoverUrl: mediaUrl(r.backCoverPath),
     flags: {

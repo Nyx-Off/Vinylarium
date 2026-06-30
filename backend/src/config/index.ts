@@ -40,6 +40,9 @@ export const config = {
     consumerKey: optional('DISCOGS_CONSUMER_KEY'),
     consumerSecret: optional('DISCOGS_CONSUMER_SECRET'),
     userAgent: optional('DISCOGS_USER_AGENT', 'Vinylarium/0.1 +https://github.com/Nyx-Off/Vinylarium'),
+    // Currency for marketplace prices (lowest_price), passed as curr_abbr to the
+    // release endpoint. Discogs accepts USD/GBP/EUR/CAD/AUD/JPY/CHF/MXN/BRL/NZD/SEK/ZAR.
+    currency: optional('DISCOGS_CURRENCY', 'EUR'),
   },
 
   musicbrainz: {

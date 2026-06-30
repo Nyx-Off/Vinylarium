@@ -190,6 +190,15 @@ model Release {
   isRemaster       Boolean @default(false)
   isSpecialEdition Boolean @default(false)
 
+  // Discogs marketplace snapshot (captured during enrichment, no extra API call —
+  // these fields come in the same /releases/{id} response). Volatile by nature.
+  lowestPrice    Float? // current lowest marketplace listing, in priceCurrency
+  priceCurrency  String? // ISO currency of lowestPrice (curr_abbr, default EUR)
+  numForSale     Int? // how many copies are currently for sale
+  communityHave  Int? // Discogs users who own this release
+  communityWant  Int? // Discogs users who want it
+  priceCheckedAt DateTime? // when the snapshot above was last refreshed
+
   // Physical storage
   storageLocationId String?
   storageSlot       String? // free-text position within a bin ("14", "B-3", ...)

@@ -1,5 +1,6 @@
 import { ImageType } from '@prisma/client';
 import { prisma } from '../../db/prisma';
+import { config } from '../../config';
 import { downloadToStorage, makeThumbnail } from '../../lib/storage';
 import { imageHeaders } from '../clients/discogs';
 import { parseRole, splitRoles } from '../../lib/discogs-roles';
@@ -73,6 +74,13 @@ export async function applyDiscogsRelease(
   const year = masterYear ?? pressingYear;
   const masterId = data.master_id && data.master_id > 0 ? data.master_id : null;
 
+  // Marketplace snapshot — comes in the SAME response (no extra API call). Only
+  // overwrite when present so a transient missing field can't wipe a prior value.
+  const lowestPrice = typeof data.lowest_price === 'number' ? data.lowest_price : null;
+  const numForSale = typeof data.num_for_sale === 'number' ? data.num_for_sale : null;
+  const communityHave = typeof data.community?.have === 'number' ? data.community.have : null;
+  const communityWant = typeof data.community?.want === 'number' ? data.community.want : null;
+
   await prisma.release.update({
     where: { id: releaseId },
     data: {
@@ -89,6 +97,12 @@ export async function applyDiscogsRelease(
       discogsMasterId: masterId,
       discogsUri: data.uri || undefined,
       thumbUrl: data.thumb || undefined,
+      lowestPrice: lowestPrice ?? undefined,
+      priceCurrency: lowestPrice != null ? config.discogs.currency : undefined,
+      numForSale: numForSale ?? undefined,
+      communityHave: communityHave ?? undefined,
+      communityWant: communityWant ?? undefined,
+      priceCheckedAt: new Date(),
       ...flags,
     },
   });

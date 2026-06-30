@@ -97,6 +97,13 @@ export interface ReleaseDetail {
   mediaCondition: string | null;
   sleeveCondition: string | null;
   collectionFolder: string | null;
+  market: {
+    lowestPrice: number | null;
+    currency: string | null;
+    numForSale: number | null;
+    have: number | null;
+    want: number | null;
+  };
   coverUrl: string | null;
   backCoverUrl: string | null;
   flags: {
@@ -259,6 +266,15 @@ export interface Stats {
   topLabels: { id: string; name: string; count: number }[];
   ratings: { rating: number; count: number }[];
   formats: { name: string; count: number }[];
+  valuation: { total: number; count: number; currency: string };
+  topValued: {
+    id: string;
+    title: string;
+    artistDisplay: string;
+    price: number | null;
+    currency: string | null;
+    coverUrl: string | null;
+  }[];
 }
 
 export interface Origin {

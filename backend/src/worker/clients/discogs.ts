@@ -147,7 +147,9 @@ export const discogs = {
   },
 
   async getRelease(id: number): Promise<any> {
-    const res = await fetchWithTimeout(`https://api.discogs.com/releases/${id}`, {
+    // curr_abbr makes Discogs return lowest_price in our configured currency.
+    const curr = encodeURIComponent(config.discogs.currency);
+    const res = await fetchWithTimeout(`https://api.discogs.com/releases/${id}?curr_abbr=${curr}`, {
       headers: headers(),
     });
     if (res.status === 429) {

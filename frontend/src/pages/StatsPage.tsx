@@ -62,6 +62,13 @@ export default function StatsPage() {
 
   const t = data.totals;
   const enc = encodeURIComponent;
+  const money = (v: number, ccy: string) => {
+    try {
+      return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: ccy }).format(v);
+    } catch {
+      return `${v.toFixed(2)} ${ccy}`;
+    }
+  };
 
   // Stars 1..5 — fill any gaps so the distribution always shows the full scale.
   const ratingByStar = new Map(data.ratings.map((r) => [r.rating, r.count]));
@@ -101,6 +108,22 @@ export default function StatsPage() {
         <Kpi label="En concert" value={t.live} />
         <Kpi label="Masqués" value={t.hidden} />
       </div>
+
+      {data.valuation.count > 0 && (
+        <div className="card flex flex-wrap items-baseline justify-between gap-2 px-4 py-3">
+          <div>
+            <div className="font-display text-3xl font-bold text-accent">
+              {money(data.valuation.total, data.valuation.currency)}
+            </div>
+            <div className="text-sm font-medium">Valeur estimée de la collection</div>
+          </div>
+          <div className="text-xs text-mocha/70">
+            Somme du prix le plus bas du marché Discogs sur {data.valuation.count} disque
+            {data.valuation.count > 1 ? 's' : ''} en vente — estimation indicative, mise à jour à
+            l'enrichissement.
+          </div>
+        </div>
+      )}
 
       {t.pendingEnrichment > 0 && (
         <p className="text-xs text-mocha/70">
@@ -153,6 +176,36 @@ export default function StatsPage() {
         <BarList title="Formats" rows={data.formats.map((f) => ({ label: f.name, count: f.count }))} />
         {data.ratings.length > 0 && <BarList title="Notes" rows={ratingRows} />}
       </div>
+
+      {data.topValued.length > 0 && (
+        <div className="card p-4">
+          <h2 className="label mb-3">Disques les plus cotés</h2>
+          <div className="space-y-2">
+            {data.topValued.map((r) => (
+              <Link
+                key={r.id}
+                to={`/release/${r.id}`}
+                className="flex items-center gap-3 rounded transition-transform hover:-translate-y-0.5"
+              >
+                {r.coverUrl ? (
+                  <img src={r.coverUrl} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />
+                ) : (
+                  <div className="h-12 w-12 shrink-0 rounded bg-ink/10" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium">{r.title}</div>
+                  <div className="truncate text-xs text-mocha">{r.artistDisplay}</div>
+                </div>
+                {r.price != null && (
+                  <span className="shrink-0 font-display font-bold text-accent">
+                    {money(r.price, r.currency ?? data.valuation.currency)}
+                  </span>
+                )}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

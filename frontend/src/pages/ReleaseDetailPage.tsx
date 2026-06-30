@@ -395,6 +395,37 @@ export default function ReleaseDetailPage() {
                   {f}
                 </span>
               ))}
+              {r.market.lowestPrice != null && (
+                <span
+                  className="chip"
+                  title={
+                    r.market.numForSale
+                      ? `${r.market.numForSale} en vente sur Discogs`
+                      : 'Prix le plus bas du marché Discogs'
+                  }
+                >
+                  💰 dès{' '}
+                  {(() => {
+                    const ccy = r.market.currency ?? 'EUR';
+                    try {
+                      return new Intl.NumberFormat('fr-FR', {
+                        style: 'currency',
+                        currency: ccy,
+                      }).format(r.market.lowestPrice);
+                    } catch {
+                      return `${r.market.lowestPrice.toFixed(2)} ${ccy}`;
+                    }
+                  })()}
+                </span>
+              )}
+              {(r.market.have != null || r.market.want != null) && (
+                <span
+                  className="chip"
+                  title="Collectionneurs Discogs qui possèdent / recherchent ce disque"
+                >
+                  ❤️ {r.market.have ?? 0} · 🔎 {r.market.want ?? 0}
+                </span>
+              )}
               {r.enrichmentStatus !== 'ENRICHED' && r.enrichmentStatus !== 'MANUAL' && (
                 <span className="chip">⏳ {r.enrichmentStatus.toLowerCase()}</span>
               )}
