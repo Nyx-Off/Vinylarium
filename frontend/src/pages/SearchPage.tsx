@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { useFacets, useReleases, ReleaseFilters } from '../api/hooks';
+import { Link, useSearchParams } from 'react-router-dom';
+import { useFacets, useLyricsSearch, useReleases, ReleaseFilters } from '../api/hooks';
+import { LyricMatch } from '../api/types';
 import { ReleaseCard } from '../components/ReleaseCard';
 import { Spinner } from '../components/Spinner';
 import {
@@ -53,6 +54,7 @@ export default function SearchPage() {
   // The whole search state lives in the URL: the back button restores the
   // exact page/filters, and a search can be shared as a link.
   const [params, setParams] = useSearchParams();
+  const mode = params.get('mode') === 'lyrics' ? 'lyrics' : 'releases';
 
   const filters = useMemo<ReleaseFilters>(() => {
     const f: ReleaseFilters = {
@@ -79,6 +81,10 @@ export default function SearchPage() {
   // (the library alone excludes them); the "Masqués" chip narrows to them.
   const { data, isLoading, isFetching } = useReleases({ ...filters, includeHidden: true });
   const { data: facets } = useFacets();
+  const { data: lyricHits, isLoading: lyricsLoading } = useLyricsSearch(
+    filters.q ?? '',
+    mode === 'lyrics',
+  );
 
   function patch(changes: Record<string, string | null>, resetPage = true) {
     setParams(
@@ -124,12 +130,19 @@ export default function SearchPage() {
           <label className="label">Mots-clés</label>
           <input
             className="input"
-            placeholder="titre, artiste, note…"
+            placeholder={mode === 'lyrics' ? 'des mots dans les paroles…' : 'titre, artiste, note…'}
             value={filters.q ?? ''}
             onChange={(e) => set('q', e.target.value)}
           />
+          {mode === 'lyrics' && (
+            <p className="mt-1 text-xs text-mocha/70">
+              Recherche dans le texte des paroles (Genius / LRCLIB).
+            </p>
+          )}
         </div>
 
+        {mode === 'releases' && (
+          <>
         {filters.artistId && (
           <div className="chip chip-active w-full justify-between">
             Artiste sélectionné
@@ -234,60 +247,152 @@ export default function SearchPage() {
             ))}
           </div>
         </div>
+          </>
+        )}
       </aside>
 
       {/* Results */}
       <div>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm text-mocha">
-            {data ? `${data.total} résultat${data.total > 1 ? 's' : ''}` : '…'}
-            {isFetching && ' · …'}
-          </p>
-          <div className="flex items-center gap-2">
-            <PageSizeSelect
-              value={filters.pageSize ?? DEFAULT_PAGE_SIZE}
-              onChange={(n) => patch({ pageSize: String(n) })}
-            />
-            <select
-              className="input w-40"
-              value={filters.sort}
-              onChange={(e) => patch({ sort: e.target.value })}
-            >
-              <option value="addedDesc">Ajout récent</option>
-              <option value="title">Titre A→Z</option>
-              <option value="titleDesc">Titre Z→A</option>
-              <option value="artist">Artiste A→Z</option>
-              <option value="artistDesc">Artiste Z→A</option>
-              <option value="yearAsc">Année ↑</option>
-              <option value="yearDesc">Année ↓</option>
-              <option value="ratingDesc">Note ↓</option>
-            </select>
-          </div>
+        <div className="mb-3 flex gap-1.5">
+          <button
+            onClick={() => patch({ mode: null })}
+            className={`chip ${mode === 'releases' ? 'chip-active' : ''}`}
+          >
+            Disques
+          </button>
+          <button
+            onClick={() => patch({ mode: 'lyrics' })}
+            className={`chip ${mode === 'lyrics' ? 'chip-active' : ''}`}
+          >
+            Paroles
+          </button>
         </div>
 
-        {isLoading ? (
-          <Spinner />
-        ) : data && data.items.length > 0 ? (
-          <>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-              {data.items.map((r) => (
-                <ReleaseCard key={r.id} r={r} />
+        {mode === 'lyrics' ? (
+          (filters.q ?? '').trim().length < 2 ? (
+            <p className="py-16 text-center text-mocha">
+              Tapez au moins deux lettres pour chercher dans les paroles.
+            </p>
+          ) : lyricsLoading ? (
+            <Spinner />
+          ) : lyricHits && lyricHits.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm text-mocha">
+                {lyricHits.length} extrait{lyricHits.length > 1 ? 's' : ''}
+              </p>
+              {lyricHits.map((h, i) => (
+                <LyricResult key={`${h.releaseId}-${i}`} hit={h} />
               ))}
             </div>
-            <Pagination
-              page={data.page}
-              pageCount={data.pageCount}
-              onPage={(p) => {
-                patch({ page: p <= 1 ? null : String(p) }, false);
-                window.scrollTo({ top: 0 });
-              }}
-            />
-          </>
+          ) : (
+            <p className="py-16 text-center text-mocha">
+              Aucune parole ne contient « {filters.q} ».
+            </p>
+          )
         ) : (
-          <p className="py-16 text-center text-mocha">Aucun disque ne correspond à ces critères.</p>
+          <>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-mocha">
+                {data ? `${data.total} résultat${data.total > 1 ? 's' : ''}` : '…'}
+                {isFetching && ' · …'}
+              </p>
+              <div className="flex items-center gap-2">
+                <PageSizeSelect
+                  value={filters.pageSize ?? DEFAULT_PAGE_SIZE}
+                  onChange={(n) => patch({ pageSize: String(n) })}
+                />
+                <select
+                  className="input w-40"
+                  value={filters.sort}
+                  onChange={(e) => patch({ sort: e.target.value })}
+                >
+                  <option value="addedDesc">Ajout récent</option>
+                  <option value="title">Titre A→Z</option>
+                  <option value="titleDesc">Titre Z→A</option>
+                  <option value="artist">Artiste A→Z</option>
+                  <option value="artistDesc">Artiste Z→A</option>
+                  <option value="yearAsc">Année ↑</option>
+                  <option value="yearDesc">Année ↓</option>
+                  <option value="ratingDesc">Note ↓</option>
+                </select>
+              </div>
+            </div>
+
+            {isLoading ? (
+              <Spinner />
+            ) : data && data.items.length > 0 ? (
+              <>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {data.items.map((r) => (
+                    <ReleaseCard key={r.id} r={r} />
+                  ))}
+                </div>
+                <Pagination
+                  page={data.page}
+                  pageCount={data.pageCount}
+                  onPage={(p) => {
+                    patch({ page: p <= 1 ? null : String(p) }, false);
+                    window.scrollTo({ top: 0 });
+                  }}
+                />
+              </>
+            ) : (
+              <p className="py-16 text-center text-mocha">
+                Aucun disque ne correspond à ces critères.
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>
+  );
+}
+
+// Render a ts_headline snippet, bolding the «…» highlighted matches.
+function Snippet({ text }: { text: string }) {
+  const parts = text.split(/(«[^»]*»)/g).filter(Boolean);
+  return (
+    <span className="whitespace-pre-line">
+      {parts.map((p, i) =>
+        p.startsWith('«') && p.endsWith('»') ? (
+          <mark key={i} className="rounded bg-accent/20 px-0.5 font-semibold text-ink">
+            {p.slice(1, -1)}
+          </mark>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
+      )}
+    </span>
+  );
+}
+
+function LyricResult({ hit }: { hit: LyricMatch }) {
+  return (
+    <Link
+      to={`/release/${hit.releaseId}`}
+      className="card flex gap-3 p-3 transition-transform hover:-translate-y-0.5"
+    >
+      {hit.coverUrl ? (
+        <img src={hit.coverUrl} alt="" className="h-16 w-16 shrink-0 rounded object-cover" />
+      ) : (
+        <div className="h-16 w-16 shrink-0 rounded bg-ink/10" />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="truncate font-medium">{hit.artistDisplay}</span>
+          {hit.trackTitle && (
+            <span className="truncate text-sm text-mocha">
+              · {hit.trackPosition ? `${hit.trackPosition} ` : ''}
+              {hit.trackTitle}
+            </span>
+          )}
+        </div>
+        <div className="truncate text-xs text-mocha/70">{hit.title}</div>
+        <p className="mt-1 line-clamp-2 text-sm text-mocha">
+          <Snippet text={hit.snippet} />
+        </p>
+      </div>
+    </Link>
   );
 }
 

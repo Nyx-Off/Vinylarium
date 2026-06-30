@@ -291,6 +291,16 @@ export interface TimelineResponse {
   undated: number;
 }
 
+export interface LyricMatch {
+  releaseId: string;
+  title: string;
+  artistDisplay: string;
+  coverUrl: string | null;
+  trackTitle: string | null;
+  trackPosition: string | null;
+  snippet: string;
+}
+
 export interface ReenrichStatus {
   inProgress: boolean;
   waiting: number;

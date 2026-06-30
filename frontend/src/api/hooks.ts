@@ -192,6 +192,16 @@ export function useArtist(id?: string) {
   });
 }
 
+export function useLyricsSearch(q: string, enabled: boolean) {
+  return useQuery({
+    enabled: enabled && q.trim().length >= 2,
+    queryKey: ['lyrics-search', q],
+    queryFn: async () =>
+      (await api.get<{ results: T.LyricMatch[] }>('/search/lyrics', { params: { q } })).data
+        .results,
+  });
+}
+
 export function useArtistSearch(q: string) {
   return useQuery({
     queryKey: ['artists', q],
