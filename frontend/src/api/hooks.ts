@@ -192,6 +192,13 @@ export function useArtist(id?: string) {
   });
 }
 
+export function useDuplicates() {
+  return useQuery({
+    queryKey: ['duplicates'],
+    queryFn: async () => (await api.get<T.DuplicatesResponse>('/releases/duplicates')).data,
+  });
+}
+
 export function useLyricsSearch(q: string, enabled: boolean) {
   return useQuery({
     enabled: enabled && q.trim().length >= 2,

@@ -291,6 +291,30 @@ export interface TimelineResponse {
   undated: number;
 }
 
+export interface DuplicateRelease {
+  id: string;
+  title: string;
+  artistDisplay: string;
+  year: number | null;
+  pressingYear: number | null;
+  country: string | null;
+  catalogNumber: string | null;
+  coverUrl: string | null;
+  hidden: boolean;
+}
+
+export interface DuplicateGroup {
+  key: string;
+  kind: 'master' | 'title';
+  count: number;
+  releases: DuplicateRelease[];
+}
+
+export interface DuplicatesResponse {
+  groups: DuplicateGroup[];
+  total: number;
+}
+
 export interface LyricMatch {
   releaseId: string;
   title: string;

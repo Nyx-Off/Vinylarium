@@ -15,6 +15,7 @@ import SettingsPage from './pages/SettingsPage';
 import MapPage from './pages/MapPage';
 import TimelinePage from './pages/TimelinePage';
 import StatsPage from './pages/StatsPage';
+import DuplicatesPage from './pages/DuplicatesPage';
 import ShowcasePage from './pages/ShowcasePage';
 import SpotifyCallbackPage from './pages/SpotifyCallbackPage';
 
@@ -67,6 +68,7 @@ export default function App() {
           path="/stats"
           element={features.stats ? <StatsPage /> : <Navigate to="/library" replace />}
         />
+        <Route path="/duplicates" element={<DuplicatesPage />} />
         <Route path="/import" element={<ImportPage />} />
         <Route path="/add" element={<ManualAddPage />} />
         <Route path="/settings" element={<SettingsPage />} />

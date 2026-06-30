@@ -73,9 +73,14 @@ export default function StatsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-display text-3xl font-bold">Statistiques</h1>
-        <p className="mt-1 text-sm text-mocha">Un aperçu chiffré de votre collection.</p>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="font-display text-3xl font-bold">Statistiques</h1>
+          <p className="mt-1 text-sm text-mocha">Un aperçu chiffré de votre collection.</p>
+        </div>
+        <Link to="/duplicates" className="btn-ghost text-sm">
+          Détecter les doublons →
+        </Link>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">

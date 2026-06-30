@@ -4,7 +4,7 @@ import path from 'path';
 import { prisma } from '../../db/prisma';
 import { badRequest, notFound } from '../../lib/errors';
 import { currentUser } from '../../lib/auth-helpers';
-import { saveBuffer } from '../../lib/storage';
+import { saveBuffer, mediaUrl } from '../../lib/storage';
 import { deriveDecade, deriveVersionFlags, sortName } from '../../lib/text';
 import {
   upsertArtistByName,
@@ -260,6 +260,75 @@ export async function releaseRoutes(app: FastifyInstance) {
     const r = await prisma.release.findFirst({ where, skip });
     if (!r) throw notFound('Collection vide');
     return toListItem(r);
+  });
+
+  // ── Duplicate detection ───────────────────────────────────────────────────
+  // Groups releases that are likely the same work: sharing a Discogs master id
+  // (different pressings of one album) OR, lacking that, the same normalized
+  // artist + title (manual adds, non-Discogs entries). Returns groups of size
+  // ≥ 2 so the user can review and hide/merge them.
+  app.get('/duplicates', async () => {
+    const releases = await prisma.release.findMany({
+      select: {
+        id: true,
+        title: true,
+        artistDisplay: true,
+        year: true,
+        pressingYear: true,
+        country: true,
+        catalogNumber: true,
+        coverPath: true,
+        thumbUrl: true,
+        hidden: true,
+        discogsMasterId: true,
+      },
+    });
+
+    const norm = (s: string) =>
+      s
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .replace(/\(\d+\)/g, '') // Discogs "(2)" disambiguation suffixes
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+
+    const groups = new Map<string, { key: string; items: typeof releases }>();
+    for (const r of releases) {
+      // A master id is the strongest "same album" signal; fall back to the
+      // normalized artist+title so manual/non-Discogs discs still cluster.
+      const key =
+        r.discogsMasterId != null
+          ? `m:${r.discogsMasterId}`
+          : `t:${norm(r.artistDisplay)}|${norm(r.title)}`;
+      const g = groups.get(key);
+      if (g) g.items.push(r);
+      else groups.set(key, { key, items: [r] });
+    }
+
+    const dupes = [...groups.values()]
+      .filter((g) => g.items.length > 1)
+      .map((g) => ({
+        key: g.key,
+        kind: g.key.startsWith('m:') ? ('master' as const) : ('title' as const),
+        count: g.items.length,
+        releases: g.items
+          .map((r) => ({
+            id: r.id,
+            title: r.title,
+            artistDisplay: r.artistDisplay,
+            year: r.year,
+            pressingYear: r.pressingYear,
+            country: r.country,
+            catalogNumber: r.catalogNumber,
+            coverUrl: mediaUrl(r.coverPath) ?? r.thumbUrl,
+            hidden: r.hidden,
+          }))
+          .sort((a, b) => (a.pressingYear ?? a.year ?? 0) - (b.pressingYear ?? b.year ?? 0)),
+      }))
+      .sort((a, b) => b.count - a.count || a.releases[0].artistDisplay.localeCompare(b.releases[0].artistDisplay));
+
+    return { groups: dupes, total: dupes.reduce((n, g) => n + g.count, 0) };
   });
 
   // ── Live Discogs search (the "add a disc" page) ───────────────────────────
