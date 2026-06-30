@@ -1,4 +1,5 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useReleases } from '../api/hooks';
 import { api } from '../api/client';
 import { ReleaseCard } from '../components/ReleaseCard';
@@ -70,8 +71,43 @@ export default function LibraryPage() {
   }
 
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [pick, setPick] = useState<ReleaseListItem | null>(null);
   const [rolling, setRolling] = useState(false);
+
+  // Bulk multi-select (wall view only).
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  function exitSelect() {
+    setSelectMode(false);
+    setSelected(new Set());
+  }
+  async function runBulk(action: 'hide' | 'unhide' | 'addTag' | 'removeTag') {
+    if (selected.size === 0 || bulkBusy) return;
+    let tag: string | undefined;
+    if (action === 'addTag' || action === 'removeTag') {
+      const input = window.prompt(
+        action === 'addTag' ? 'Tag à ajouter aux disques sélectionnés :' : 'Tag à retirer :',
+      );
+      if (!input?.trim()) return;
+      tag = input.trim();
+    }
+    setBulkBusy(true);
+    try {
+      await api.post('/releases/bulk', { ids: [...selected], action, tag });
+      await qc.invalidateQueries({ queryKey: ['releases'] });
+      exitSelect();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
 
   async function pickRandom() {
     if (rolling) return;
@@ -174,6 +210,15 @@ export default function LibraryPage() {
               🎲 Au hasard
             </button>
           )}
+          {view === 'wall' && (
+            <button
+              onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium ${selectMode ? 'bg-accent text-cream' : 'bg-ink/5 text-mocha hover:bg-ink/10'}`}
+              title="Sélectionner plusieurs disques"
+            >
+              {selectMode ? 'Terminer' : '☑︎ Sélectionner'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -197,13 +242,49 @@ export default function LibraryPage() {
       ) : view === 'wall' ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
           {items.map((r) => (
-            <ReleaseCard key={r.id} r={r} />
+            <ReleaseCard
+              key={r.id}
+              r={r}
+              selectable={selectMode}
+              selected={selected.has(r.id)}
+              onToggleSelect={toggleSelect}
+            />
           ))}
         </div>
       ) : view === 'pile' ? (
         <PileBrowser items={items} filter={q} />
       ) : (
         <CrateBrowser items={items} sortHint={sort} />
+      )}
+
+      {selectMode && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-ink/10 bg-cream/95 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur md:bottom-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:rounded-full md:border md:shadow-xl">
+          <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-2 text-sm">
+            <span className="font-medium">{selected.size} sélectionné{selected.size > 1 ? 's' : ''}</span>
+            <button
+              onClick={() => setSelected(new Set(items.map((r) => r.id)))}
+              className="btn-ghost px-2 text-xs"
+            >
+              Tout (page)
+            </button>
+            <button onClick={() => setSelected(new Set())} className="btn-ghost px-2 text-xs">
+              Aucun
+            </button>
+            <span className="mx-1 h-4 w-px bg-ink/15" />
+            <button onClick={() => runBulk('hide')} disabled={bulkBusy || !selected.size} className="btn-outline text-xs">
+              Masquer
+            </button>
+            <button onClick={() => runBulk('unhide')} disabled={bulkBusy || !selected.size} className="btn-outline text-xs">
+              Afficher
+            </button>
+            <button onClick={() => runBulk('addTag')} disabled={bulkBusy || !selected.size} className="btn-outline text-xs">
+              + Tag
+            </button>
+            <button onClick={() => runBulk('removeTag')} disabled={bulkBusy || !selected.size} className="btn-outline text-xs">
+              − Tag
+            </button>
+          </div>
+        </div>
       )}
 
       {view === 'wall' && data && (

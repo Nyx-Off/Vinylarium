@@ -331,6 +331,46 @@ export async function releaseRoutes(app: FastifyInstance) {
     return { groups: dupes, total: dupes.reduce((n, g) => n + g.count, 0) };
   });
 
+  // ── Bulk actions (library multi-select) ───────────────────────────────────
+  // Hide/unhide a batch, or add/remove a tag across many releases at once.
+  app.post('/bulk', async (req) => {
+    const body = z
+      .object({
+        ids: z.array(z.string()).min(1).max(2000),
+        action: z.enum(['hide', 'unhide', 'addTag', 'removeTag']),
+        tag: z.string().trim().min(1).max(60).optional(),
+      })
+      .parse(req.body);
+
+    if (body.action === 'hide' || body.action === 'unhide') {
+      const res = await prisma.release.updateMany({
+        where: { id: { in: body.ids } },
+        data: { hidden: body.action === 'hide' },
+      });
+      return { updated: res.count };
+    }
+
+    if (!body.tag) throw badRequest('Un nom de tag est requis');
+
+    if (body.action === 'addTag') {
+      const tag = await upsertTag(body.tag);
+      // Only create links that don't already exist (skipDuplicates handles the rest).
+      const res = await prisma.releaseTag.createMany({
+        data: body.ids.map((releaseId) => ({ releaseId, tagId: tag.id })),
+        skipDuplicates: true,
+      });
+      return { updated: res.count, tag: tag.name };
+    }
+
+    // removeTag
+    const tag = await prisma.tag.findUnique({ where: { name: body.tag } });
+    if (!tag) return { updated: 0 };
+    const res = await prisma.releaseTag.deleteMany({
+      where: { tagId: tag.id, releaseId: { in: body.ids } },
+    });
+    return { updated: res.count, tag: tag.name };
+  });
+
   // ── Live Discogs search (the "add a disc" page) ───────────────────────────
   // Exception to the "Discogs only from the worker" rule: searches are
   // user-driven, debounced client-side AND spaced ≥1.1s here, so they sip a
